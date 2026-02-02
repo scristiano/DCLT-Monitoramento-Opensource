@@ -1,395 +1,623 @@
-# Setup de Instâncias EC2
+# Setup de Instâncias EC2 para OpenTelemetry e Alloy - Aula 06
 
-Guia completo para configurar as instâncias EC2 para os cenários de OpenTelemetry e Alloy.
+Guia para criar duas instâncias EC2: uma para o stack completo de observabilidade (Grafana + Prometheus + Loki + Jaeger + OTel Collector) e outra para aplicações instrumentadas com OpenTelemetry em dois cenários diferentes.
 
-## Visão Geral
+## Arquitetura da Aula 06
 
-Este setup utiliza **2 instâncias EC2**:
+- **Instância 1**: Stack de Observabilidade Completa (t4g.medium - AMD64)
+  - Grafana (visualização unificada de métricas, logs e traces)
+  - Prometheus (coleta e armazenamento de métricas)
+  - Loki (armazenamento centralizado de logs)
+  - Jaeger (tracing distribuído completo)
+  - OpenTelemetry Collector (pipeline central de processamento)
 
-- **Instância 1**: Stack de observabilidade (Grafana, Prometheus, Loki, Jaeger, OTel Collector)
-- **Instância 2**: Aplicações (Frontend, Backend, PostgreSQL, Redis) + Alloy (apenas Cenário 2)
-
-## Arquitetura de Rede
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                         VPC                                 │
-│                    10.0.0.0/16                              │
-│                                                             │
-│  ┌──────────────────────────────────────────────────────┐  │
-│  │              Subnet Pública                          │  │
-│  │              10.0.1.0/24                             │  │
-│  │                                                      │  │
-│  │  ┌─────────────────┐      ┌─────────────────┐      │  │
-│  │  │  Instância 1    │      │  Instância 2    │      │  │
-│  │  │  Observability  │◄─────┤  Applications   │      │  │
-│  │  │  10.0.1.100     │      │  10.0.1.200     │      │  │
-│  │  └─────────────────┘      └─────────────────┘      │  │
-│  │                                                      │  │
-│  └──────────────────────────────────────────────────────┘  │
-│                           │                                 │
-└───────────────────────────┼─────────────────────────────────┘
-                            │
-                    ┌───────▼────────┐
-                    │ Internet       │
-                    │ Gateway        │
-                    └────────────────┘
-```
+- **Instância 2**: Aplicações Instrumentadas com OpenTelemetry (t3.small - AMD64)
+  - **Cenário 1 (Via OTel Collector)**: Apps enviam telemetria direto para Collector
+    - Frontend Service (Node.js/Express com OTel SDK)
+    - Backend API Service (Python/Flask com OTel SDK)
+    - PostgreSQL Database
+    - Redis Cache
+  
+  - **Cenário 2 (Via Grafana Alloy)**: Apps enviam telemetria para Alloy local
+    - Frontend Service (Node.js/Express com OTel SDK)
+    - Backend API Service (Python/Flask com OTel SDK)
+    - PostgreSQL Database
+    - Redis Cache
+    - Grafana Alloy (agente local de telemetria)
 
 ## Pré-requisitos
 
 - Conta AWS ativa
-- AWS CLI configurado (opcional)
-- Conhecimento básico de EC2 e VPC
-- Par de chaves SSH criado
+- Key Pair criado
+- VPC e Subnet configuradas
 
-## Passo 1: Criar VPC e Subnet
+**Importante sobre as arquiteturas:**
+- **t3.medium** (AMD64): Para stack de observabilidade completa (4GB RAM recomendado)
+- **t3.small** (AMD64): Para aplicações instrumentadas (2GB RAM suficiente)
 
-### Opção A: Usar VPC Default
+**Novidades da Aula 06:**
+- **OpenTelemetry nativo**: Instrumentação com OTel SDK em Python e Node.js
+- **Dois cenários**: Comparação entre OTel Collector e Grafana Alloy
+- **Telemetria unificada**: Métricas, logs e traces em um único pipeline
+- **OTLP Protocol**: Protocolo padrão do OpenTelemetry
+- **Context Propagation**: Correlação automática entre sinais
 
-Se você já tem uma VPC default, pode usá-la diretamente.
+## Passo 1: Criar IAM Role para SSM
 
-### Opção B: Criar Nova VPC
+### Via Console AWS
 
-1. Acesse **VPC Console**
-2. Clique em **Create VPC**
-3. Configurações:
-   - **Name**: `aula-06-vpc`
-   - **IPv4 CIDR**: `10.0.0.0/16`
-   - **IPv6 CIDR**: Sem IPv6
-   - **Tenancy**: Default
+1. **IAM Dashboard** → **Roles** → **Create role**
 
-4. Criar **Subnet**:
-   - **Name**: `aula-06-subnet-public`
-   - **VPC**: `aula-06-vpc`
-   - **Availability Zone**: Qualquer
-   - **IPv4 CIDR**: `10.0.1.0/24`
+2. **Trusted entity type:**
+   - AWS service
+   - Use case: EC2
 
-5. Criar **Internet Gateway**:
-   - **Name**: `aula-06-igw`
-   - Attach à VPC `aula-06-vpc`
+3. **Add permissions:**
+   - Buscar e selecionar: `AmazonSSMManagedInstanceCore`
 
-6. Configurar **Route Table**:
-   - Adicionar rota: `0.0.0.0/0` → Internet Gateway
+4. **Role details:**
+   - Role name: `PosTech-DevOps-Monitoramento-Role`
+   - Description: `Role para acesso SSM às instâncias EC2 - PosTech DevOps`
+
+5. **Create role**
+
+### Via AWS CLI
+```bash
+# Criar policy de confiança
+cat > trust-policy.json << 'EOF'
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "Service": "ec2.amazonaws.com"
+      },
+      "Action": "sts:AssumeRole"
+    }
+  ]
+}
+EOF
+
+# Criar role
+aws iam create-role \
+  --role-name PosTech-DevOps-Monitoramento-Role \
+  --assume-role-policy-document file://trust-policy.json
+
+# Anexar policy do SSM
+aws iam attach-role-policy \
+  --role-name PosTech-DevOps-Monitoramento-Role \
+  --policy-arn arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+
+# Criar instance profile
+aws iam create-instance-profile --instance-profile-name PosTech-DevOps-Monitoramento-Profile
+
+# Adicionar role ao instance profile
+aws iam add-role-to-instance-profile \
+  --instance-profile-name PosTech-DevOps-Monitoramento-Profile \
+  --role-name PosTech-DevOps-Monitoramento-Role
+```
 
 ## Passo 2: Criar Security Groups
 
-### Security Group da Instância 1 (Observabilidade)
-
-**Nome**: `aula-06-sg-observability`
-
-**Inbound Rules**:
-
-| Tipo | Protocolo | Porta | Origem | Descrição |
-|------|-----------|-------|--------|-----------|
-| SSH | TCP | 22 | Seu IP | Acesso SSH |
-| Custom TCP | TCP | 3000 | 0.0.0.0/0 | Grafana UI |
-| Custom TCP | TCP | 9090 | 0.0.0.0/0 | Prometheus UI |
-| Custom TCP | TCP | 16686 | 0.0.0.0/0 | Jaeger UI |
-| Custom TCP | TCP | 3100 | 10.0.1.0/24 | Loki (interno) |
-| Custom TCP | TCP | 4317 | 10.0.1.0/24 | OTLP gRPC (interno) |
-| Custom TCP | TCP | 4318 | 10.0.1.0/24 | OTLP HTTP (interno) |
-| Custom TCP | TCP | 4319 | 10.0.1.0/24 | OTel Collector (interno) |
-
-**Outbound Rules**:
-- All traffic → 0.0.0.0/0
-
-### Security Group da Instância 2 (Aplicações)
-
-**Nome**: `aula-06-sg-applications`
-
-**Inbound Rules**:
-
-| Tipo | Protocolo | Porta | Origem | Descrição |
-|------|-----------|-------|--------|-----------|
-| SSH | TCP | 22 | Seu IP | Acesso SSH |
-| Custom TCP | TCP | 3001 | 0.0.0.0/0 | Frontend |
-| Custom TCP | TCP | 5000 | 0.0.0.0/0 | Backend |
-| Custom TCP | TCP | 12345 | 0.0.0.0/0 | Alloy UI (Cenário 2) |
-
-**Outbound Rules**:
-- All traffic → 0.0.0.0/0
-
-## Passo 3: Criar Instância 1 (Observabilidade)
-
-### Configurações
-
-1. **AMI**: Ubuntu Server 22.04 LTS
-2. **Instance Type**: `t3.medium` (2 vCPU, 4 GB RAM)
-   - Mínimo recomendado para a stack completa
-3. **Key Pair**: Selecione ou crie um par de chaves
-4. **Network Settings**:
-   - **VPC**: `aula-06-vpc`
-   - **Subnet**: `aula-06-subnet-public`
-   - **Auto-assign Public IP**: Enable
-   - **Security Group**: `aula-06-sg-observability`
-5. **Storage**: 30 GB gp3
-6. **Advanced Details**:
-   - **User Data**: Copiar conteúdo de `ec2-userdata/instancia-1.sh`
-
-### User Data Script
-
+### Security Group para Stack de Observabilidade
 ```bash
-#!/bin/bash
-# Ver arquivo completo em: ec2-userdata/instancia-1.sh
-
-# Instala Docker e Docker Compose
-# Clona repositório
-# Inicia stack de observabilidade
+# Nome: observability-stack-sg
+# Descrição: Security group para stack completo de observabilidade (Grafana + Prometheus + Loki + Jaeger + OTel Collector)
 ```
 
-### Após Criação
+**Regras de entrada:**
+- SSH (22) - Source: Seu IP
+- Custom TCP (3000) - Source: 0.0.0.0/0 (Grafana web)
+- Custom TCP (9090) - Source: 0.0.0.0/0 (Prometheus web)
+- Custom TCP (16686) - Source: 0.0.0.0/0 (Jaeger UI)
+- Custom TCP (3100) - Source: VPC CIDR (Loki API)
+- Custom TCP (4317) - Source: VPC CIDR (OTLP gRPC)
+- Custom TCP (4318) - Source: VPC CIDR (OTLP HTTP)
+- Custom TCP (4319) - Source: VPC CIDR (OTel Collector HTTP)
 
-1. Aguardar instância ficar **Running**
-2. Anotar **Public IP** e **Private IP**
-3. Aguardar ~5 minutos para user data executar
-4. Verificar logs: `sudo tail -f /var/log/cloud-init-output.log`
+### Security Group para Aplicações Instrumentadas
+```bash
+# Nome: instrumented-apps-sg
+# Descrição: Security group para instância com aplicações instrumentadas com OpenTelemetry
+```
 
-### Testar Acesso
+**Regras de entrada:**
+- SSH (22) - Source: Seu IP
+- Custom TCP (3001) - Source: 0.0.0.0/0 (Frontend web)
+- Custom TCP (5000) - Source: 0.0.0.0/0 (Backend API)
+- Custom TCP (12345) - Source: 0.0.0.0/0 (Alloy UI - apenas Cenário 2)
+
+## Passo 3: Criar Instância da Stack de Observabilidade
+
+### Via Console AWS
+
+1. **EC2 Dashboard** → **Launch Instance**
+
+2. **Configurações básicas:**
+   - Name: `observability-stack`
+   - AMI: Ubuntu Server 22.04 LTS
+   - Instance type: t4g.medium
+   - Key pair: Selecione sua chave
+
+3. **Network settings:**
+   - VPC: Default ou sua VPC
+   - Subnet: Pública
+   - Auto-assign public IP: Enable
+   - Security group: `observability-stack-sg`
+
+4. **Configure storage:**
+   - 30 GB gp3
+
+5. **Advanced details:**
+   - IAM instance profile: `PosTech-DevOps-Monitoramento-Profile`
+   - User data: Cole o conteúdo do `ec2-userdata/instancia-1.sh`
+
+6. **Launch instance**
+
+### Via AWS CLI
+```bash
+aws ec2 run-instances \
+  --image-id ami-0c7217cdde317cfec \
+  --instance-type t3.medium \
+  --key-name sua-chave \
+  --security-group-ids sg-xxxxxxxxx \
+  --subnet-id subnet-xxxxxxxxx \
+  --associate-public-ip-address \
+  --iam-instance-profile Name=PosTech-DevOps-Monitoramento-Profile \
+  --user-data file://ec2-userdata/instancia-1.sh \
+  --block-device-mappings 'DeviceName=/dev/sda1,Ebs={VolumeSize=30,VolumeType=gp3}' \
+  --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=observability-stack-aula06}]'
+```
+
+## Passo 4: Criar Instância para Aplicações Instrumentadas
+
+### Via Console AWS
+
+1. **EC2 Dashboard** → **Launch Instance**
+
+2. **Configurações básicas:**
+   - Name: `instrumented-apps-aula06`
+   - AMI: Ubuntu Server 22.04 LTS
+   - Instance type: t3.small
+   - Key pair: Selecione sua chave
+
+3. **Network settings:**
+   - VPC: Mesma da instância de observabilidade
+   - Subnet: Mesma ou diferente (mesma AZ recomendada)
+   - Auto-assign public IP: Enable
+   - Security group: `instrumented-apps-aula06-sg`
+
+4. **Configure storage:**
+   - 20 GB gp3
+
+5. **Advanced details:**
+   - IAM instance profile: `PosTech-DevOps-Monitoramento-Profile`
+   - User data: Cole o conteúdo do `ec2-userdata/instancia-2.sh`
+   - **IMPORTANTE**: Edite o user data e substitua `OBSERVABILITY_IP` pelo IP privado da Instância 1
+
+6. **Launch instance**
+
+### Via AWS CLI
+```bash
+# IMPORTANTE: Substituir OBSERVABILITY_IP no arquivo antes de executar
+aws ec2 run-instances \
+  --image-id ami-0c7217cdde317cfec \
+  --instance-type t3.small \
+  --key-name sua-chave \
+  --security-group-ids sg-yyyyyyyyy \
+  --subnet-id subnet-xxxxxxxxx \
+  --associate-public-ip-address \
+  --iam-instance-profile Name=PosTech-DevOps-Monitoramento-Profile \
+  --user-data file://ec2-userdata/instancia-2.sh \
+  --block-device-mappings 'DeviceName=/dev/sda1,Ebs={VolumeSize=20,VolumeType=gp3}' \
+  --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=instrumented-apps-aula06}]'
+```
+
+## Passo 5: Clonar repositório com os arquivos
+
+Após criar as duas instâncias, clone o repositório para ter acesso aos arquivos necessários:
 
 ```bash
-# SSH
-ssh -i sua-chave.pem ubuntu@PUBLIC_IP_INSTANCIA_1
+git clone -b aula-06 https://github.com/Ed-Carlos-Marinho/PosTech-DevOps-e-Arquitetura-Cloud---Monitoramento-OpenSource.git PosTech
+cd PosTech
+```
+
+Os arquivos estarão disponíveis:
+- `instancia-1-observability/` - Stack completa de observabilidade
+- `scenario-1-via-collector/` - Cenário 1: Apps → OTel Collector
+- `scenario-2-via-alloy/` - Cenário 2: Apps → Alloy → Backends
+- `ec2-userdata/instancia-1.sh` - Script para instância de observabilidade
+- `ec2-userdata/instancia-2.sh` - Script para instância de aplicações
+- `docs/` - Documentação completa (7 guias)
+
+## Passo 6: Verificar Stack de Observabilidade Completa
+
+### Aguardar inicialização (5-10 minutos)
+
+### Verificar serviços
+```bash
+# Conectar via SSH
+ssh -i sua-chave.pem ubuntu@IP_OBSERVABILITY_SERVER
+
+# OU conectar via SSM (sem necessidade de SSH)
+aws ssm start-session --target i-1234567890abcdef0
+
+# Verificar user data
+sudo tail -f /var/log/cloud-init-output.log
 
 # Verificar Docker
-docker ps
+docker --version
+docker-compose --version
 
-# Verificar serviços
-curl http://localhost:3000/api/health  # Grafana
-curl http://localhost:9090/-/healthy   # Prometheus
-curl http://localhost:3100/ready       # Loki
-curl http://localhost:16686/           # Jaeger
+# Verificar stack de observabilidade
+cd /home/ubuntu/PosTech-DevOps-e-Arquitetura-Cloud---Monitoramento-OpenSource/instancia-1-observability
+docker-compose ps
 ```
 
-### Acessar Interfaces
+### Acessar interfaces
+- **Grafana**: `http://IP_OBSERVABILITY_SERVER:3000` (admin/admin123)
+- **Prometheus**: `http://IP_OBSERVABILITY_SERVER:9090`
+- **Jaeger UI**: `http://IP_OBSERVABILITY_SERVER:16686`
+- **Loki**: `http://IP_OBSERVABILITY_SERVER:3100` (API - sem interface web)
 
-- **Grafana**: http://PUBLIC_IP_INSTANCIA_1:3000 (admin/admin123)
-- **Prometheus**: http://PUBLIC_IP_INSTANCIA_1:9090
-- **Jaeger**: http://PUBLIC_IP_INSTANCIA_1:16686
+## Passo 7: Verificar Aplicações Instrumentadas
 
-## Passo 4: Criar Instância 2 (Aplicações)
-
-### Configurações
-
-1. **AMI**: Ubuntu Server 22.04 LTS
-2. **Instance Type**: `t3.small` (2 vCPU, 2 GB RAM)
-   - Suficiente para as aplicações
-3. **Key Pair**: Mesmo da Instância 1
-4. **Network Settings**:
-   - **VPC**: `aula-06-vpc`
-   - **Subnet**: `aula-06-subnet-public`
-   - **Auto-assign Public IP**: Enable
-   - **Security Group**: `aula-06-sg-applications`
-5. **Storage**: 20 GB gp3
-6. **Advanced Details**:
-   - **User Data**: Copiar conteúdo de `ec2-userdata/instancia-2.sh`
-   - **IMPORTANTE**: Substituir `OBSERVABILITY_IP` pelo IP privado da Instância 1
-
-### User Data Script
-
+### Conectar na instância de aplicações
 ```bash
-#!/bin/bash
-# Ver arquivo completo em: ec2-userdata/instancia-2.sh
+# Via SSH
+ssh -i sua-chave.pem ubuntu@IP_INSTRUMENTED_APPS_SERVER
 
-# IMPORTANTE: Substituir OBSERVABILITY_IP antes de usar
-export OBSERVABILITY_IP="10.0.1.100"  # IP PRIVADO da Instância 1
-
-# Instala Docker e Docker Compose
-# Clona repositório
-# Configura IP da Instância 1
-# Inicia aplicações (escolher cenário)
+# OU via SSM (recomendado)
+aws ssm start-session --target i-0987654321fedcba0
 ```
 
-### Escolher Cenário
-
-No user data, escolha **UM** dos cenários:
-
-**Cenário 1 (Via Collector)**:
+### Verificar serviços instalados automaticamente
 ```bash
+# Verificar user data
+sudo tail -f /var/log/cloud-init-output.log
+
+# Navegar para diretório do cenário escolhido
+cd /home/ubuntu/PosTech-DevOps-e-Arquitetura-Cloud---Monitoramento-OpenSource
+
+# Cenário 1
 cd scenario-1-via-collector
-sed -i "s/OBSERVABILITY_IP/${OBSERVABILITY_IP}/g" docker-compose.yml
-docker-compose up -d
-```
+docker-compose ps
 
-**Cenário 2 (Via Alloy)**:
-```bash
+# OU Cenário 2
 cd scenario-2-via-alloy
+docker-compose ps
+
+# Testar frontend
+curl http://localhost:3001/health
+
+# Testar backend API
+curl http://localhost:5000/health
+curl http://localhost:5000/api/users
+```
+
+### Configurar IP da instância de observabilidade (se não foi feito no user data)
+```bash
+# Obter IP privado da instância de observabilidade
+# Exemplo: 10.0.1.100
+
+# Cenário 1: Configurar IP no docker-compose
+cd scenario-1-via-collector
+export OBSERVABILITY_IP="10.0.1.100"
+sed -i "s/OBSERVABILITY_IP/${OBSERVABILITY_IP}/g" docker-compose.yml
+docker-compose down
+docker-compose up -d
+
+# Cenário 2: Configurar IP no Alloy config
+cd scenario-2-via-alloy
+export OBSERVABILITY_IP="10.0.1.100"
 sed -i "s/OBSERVABILITY_IP/${OBSERVABILITY_IP}/g" alloy-config.alloy
+docker-compose down
 docker-compose up -d
 ```
 
-### Após Criação
+## Passo 8: Configurar Data Sources no Grafana
 
-1. Aguardar instância ficar **Running**
-2. Anotar **Public IP**
-3. Aguardar ~5 minutos para user data executar
-4. Verificar logs: `sudo tail -f /var/log/cloud-init-output.log`
+### Verificar targets no Prometheus
+1. **Acessar Prometheus Web**: `http://IP_OBSERVABILITY_SERVER:9090`
+2. **Status** → **Targets**
+3. **Verificar** se OTel Collector está "UP"
 
-### Testar Acesso
+### Configurar Data Sources no Grafana
+1. **Acessar Grafana**: `http://IP_OBSERVABILITY_SERVER:3000` (admin/admin123)
+2. **Configuration** → **Data Sources** → **Add data source**
 
+#### Configurar Prometheus
+- **URL**: `http://prometheus:9090`
+- **Access**: Server (default)
+- **Save & Test**
+
+#### Configurar Loki
+- **URL**: `http://loki:3100`
+- **Access**: Server (default)
+- **Save & Test**
+
+#### Configurar Jaeger
+- **URL**: `http://jaeger:16686`
+- **Access**: Server (default)
+- **Save & Test**
+
+### Testar consultas básicas
+
+#### PromQL (Prometheus)
+- `up` - Status de todos os targets
+- `http_server_request_duration_count` - Requisições HTTP
+- `http_server_request_duration_bucket` - Latência HTTP
+- `otelcol_receiver_accepted_spans` - Spans recebidos pelo Collector
+
+#### LogQL (Loki)
+- `{service_name="frontend-service"}` - Logs do frontend
+- `{service_name="backend-service"}` - Logs do backend
+- `{level="error"}` - Todos os logs de erro
+- `{service_name="backend-service"} |= "trace_id"` - Logs com trace_id
+
+#### Traces no Jaeger
+- **Service**: `frontend-service`
+- **Operation**: `GET /api/users`
+- **Tags**: `http.status_code=200`
+
+## Passo 9: Testar Telemetria Unificada
+
+### Gerar telemetria nas aplicações
 ```bash
-# SSH
-ssh -i sua-chave.pem ubuntu@PUBLIC_IP_INSTANCIA_2
+# Conectar na instância de aplicações
+ssh -i sua-chave.pem ubuntu@IP_INSTRUMENTED_APPS_SERVER
 
-# Verificar Docker
-docker ps
-
-# Testar aplicações
-curl http://localhost:3001/health  # Frontend
-curl http://localhost:5000/health  # Backend
-
-# Testar endpoints
+# Gerar requisições
 curl http://localhost:3001/api/users
+curl http://localhost:3001/api/products
+curl http://localhost:3001/api/orders
+
+# Criar pedido (trace complexo)
+curl -X POST http://localhost:3001/api/orders \
+  -H "Content-Type: application/json" \
+  -d '{"user_id": 1, "total_amount": 99.99}'
+
+# Script para gerar telemetria contínua
+for i in {1..20}; do
+  curl -s http://localhost:3001/api/users > /dev/null
+  curl -s http://localhost:3001/api/products > /dev/null
+  sleep 2
+done
 ```
 
-### Acessar Aplicações
+### Verificar traces no Jaeger UI
+1. **Acessar Jaeger UI**: `http://IP_OBSERVABILITY_SERVER:16686`
+2. **Service**: Selecionar `frontend-service` ou `backend-service`
+3. **Find Traces**: Buscar traces recentes
+4. **Analisar**: Spans, duração, tags e eventos
 
-- **Frontend**: http://PUBLIC_IP_INSTANCIA_2:3001
-- **Backend**: http://PUBLIC_IP_INSTANCIA_2:5000
-- **Alloy UI** (Cenário 2): http://PUBLIC_IP_INSTANCIA_2:12345
+### Correlacionar traces com logs no Grafana
+1. **Acessar Grafana**: `http://IP_OBSERVABILITY_SERVER:3000`
+2. **Explore** → **Loki**
+3. **Consulta**: `{service_name="backend-service"} |= "trace_id"`
+4. **Copiar trace_id** de um log
+5. **Jaeger** → **Buscar pelo trace_id específico**
 
-## Passo 5: Verificar Conectividade
+### Visualizar métricas no Prometheus
+1. **Acessar Grafana**: `http://IP_OBSERVABILITY_SERVER:3000`
+2. **Explore** → **Prometheus**
+3. **Consultas**:
+   - `rate(http_server_request_duration_count[1m])` - Requisições por segundo
+   - `histogram_quantile(0.95, rate(http_server_request_duration_bucket[5m]))` - Latência P95
 
-### Da Instância 2 para Instância 1
+## Passo 10: Comparar Cenários
 
+### Cenário 1: Via OpenTelemetry Collector
 ```bash
-# SSH na Instância 2
-ssh -i sua-chave.pem ubuntu@PUBLIC_IP_INSTANCIA_2
+# Verificar logs do Collector (Instância 1)
+ssh -i sua-chave.pem ubuntu@IP_OBSERVABILITY_SERVER
+cd instancia-1-observability
+docker-compose logs otel-collector
 
-# Testar conectividade
-ping -c 3 PRIVATE_IP_INSTANCIA_1
-
-# Testar portas
-curl http://PRIVATE_IP_INSTANCIA_1:9090/-/healthy   # Prometheus
-curl http://PRIVATE_IP_INSTANCIA_1:3100/ready       # Loki
-curl http://PRIVATE_IP_INSTANCIA_1:4318             # OTLP HTTP
-curl http://PRIVATE_IP_INSTANCIA_1:4319             # OTel Collector
+# Verificar métricas do Collector
+curl http://localhost:8888/metrics | grep otelcol_receiver_accepted
 ```
 
-### Verificar Telemetria no Grafana
+### Cenário 2: Via Grafana Alloy
+```bash
+# Verificar logs do Alloy (Instância 2)
+ssh -i sua-chave.pem ubuntu@IP_INSTRUMENTED_APPS_SERVER
+cd scenario-2-via-alloy
+docker-compose logs alloy
 
-1. Acesse Grafana: http://PUBLIC_IP_INSTANCIA_1:3000
-2. Login: admin / admin123
-3. Explore → Prometheus → Query: `http_server_request_duration_count`
-4. Explore → Loki → Query: `{service_name="backend-service"}`
-5. Explore → Jaeger → Service: `frontend-service`
+# Verificar métricas do Alloy
+curl http://localhost:12345/metrics | grep alloy_otelcol_receiver_accepted
+
+# Acessar Alloy UI
+# http://IP_INSTRUMENTED_APPS_SERVER:12345
+```
+
+## Passo 11: Endpoints e Interfaces Disponíveis
+
+### Instância de Observabilidade (IP_OBSERVABILITY_SERVER)
+- **Grafana**: `http://IP:3000` (admin/admin123)
+- **Prometheus**: `http://IP:9090`
+- **Jaeger UI**: `http://IP:16686`
+- **Loki API**: `http://IP:3100` (sem interface web)
+- **OTel Collector Metrics**: `http://IP:8888/metrics`
+- **OTel Collector Health**: `http://IP:13133/health`
+
+### Instância de Aplicações (IP_INSTRUMENTED_APPS_SERVER)
+- **Frontend Web**: `http://IP:3001/`
+- **Backend API**: `http://IP:5000/`
+- **Alloy UI** (Cenário 2): `http://IP:12345`
+- **Alloy Metrics** (Cenário 2): `http://IP:12345/metrics`
+
+### Endpoints da API Backend
+```bash
+# Health checks
+GET /health
+
+# Recursos principais
+GET /api/users          # Lista usuários (com cache Redis)
+GET /api/products       # Lista produtos (com cache Redis)
+GET /api/orders         # Lista pedidos
+
+# Operações (geram traces interessantes)
+POST /api/orders        # Criar pedido (envolve DB, cache)
+```
+
+## Verificação Final
+
+### Na Stack de Observabilidade
+- OTel Collector deve aparecer como "UP" no Prometheus
+- Logs começam a ser coletados pelo Loki automaticamente
+- Traces aparecem no Jaeger UI após requisições
+- Data Sources configurados no Grafana funcionando
+
+### Nas Aplicações Instrumentadas
+- Todos os serviços rodando (frontend, backend, database, cache)
+- Aplicações respondendo às requisições HTTP
+- Telemetria sendo enviada (verificar logs)
+
+**Cenário 1 específico:**
+- Apps enviando para OTel Collector (Instância 1)
+
+**Cenário 2 específico:**
+- Alloy rodando localmente
+- Apps enviando para Alloy local
+- Alloy encaminhando para backends (Instância 1)
+
+### Comandos úteis para verificação
+```bash
+# Verificar stack de observabilidade
+cd instancia-1-observability
+docker-compose ps
+docker-compose logs otel-collector
+
+# Verificar aplicações - Cenário 1
+cd scenario-1-via-collector
+docker-compose ps
+docker-compose logs frontend
+docker-compose logs backend
+
+# Verificar aplicações - Cenário 2
+cd scenario-2-via-alloy
+docker-compose ps
+docker-compose logs alloy
+docker-compose logs frontend
+docker-compose logs backend
+
+# Testar conectividade entre instâncias
+# Da instância de aplicações para observabilidade
+telnet IP_OBSERVABILITY_SERVER 4319  # OTel Collector (Cenário 1)
+telnet IP_OBSERVABILITY_SERVER 9090  # Prometheus (Cenário 2)
+telnet IP_OBSERVABILITY_SERVER 3100  # Loki (Cenário 2)
+telnet IP_OBSERVABILITY_SERVER 4318  # Jaeger (Cenário 2)
+
+# Verificar se OTel Collector está recebendo telemetria
+curl http://IP_OBSERVABILITY_SERVER:8888/metrics | grep otelcol_receiver_accepted
+
+# Verificar se Alloy está recebendo telemetria (Cenário 2)
+curl http://localhost:12345/metrics | grep alloy_otelcol_receiver_accepted
+```
 
 ## Troubleshooting
 
-### Instância não inicia
-
+### Aplicações não iniciam
 ```bash
-# Ver logs do user data
-sudo tail -f /var/log/cloud-init-output.log
+# Ver logs detalhados
+docker-compose logs frontend
+docker-compose logs backend
 
-# Ver status do cloud-init
-sudo cloud-init status
+# Verificar conectividade com dependências
+docker-compose exec backend ping postgres
+docker-compose exec backend ping redis
+docker-compose exec frontend ping backend
 ```
 
-### Docker não instalou
+### Telemetria não aparece no Grafana
 
+**Cenário 1:**
 ```bash
-# Verificar se Docker está instalado
-docker --version
+# Verificar se apps estão enviando para Collector
+docker-compose logs backend | grep -i "otlp\|exporter"
 
-# Instalar manualmente
-curl -fsSL https://get.docker.com -o get-docker.sh
-sudo sh get-docker.sh
-sudo usermod -aG docker ubuntu
-```
-
-### Aplicações não conectam
-
-```bash
-# Verificar Security Groups
-# Porta 4319 (Cenário 1) ou 9090/3100/4318 (Cenário 2) devem estar liberadas
+# Verificar logs do Collector (Instância 1)
+ssh IP_OBSERVABILITY_SERVER
+cd instancia-1-observability
+docker-compose logs otel-collector | grep -i "error\|refused"
 
 # Testar conectividade
-telnet PRIVATE_IP_INSTANCIA_1 4319
-
-# Verificar logs
-docker-compose logs
+docker-compose exec backend curl http://OBSERVABILITY_IP:4319
 ```
 
-### Sem telemetria no Grafana
-
-1. Verificar se aplicações estão rodando (Instância 2)
-2. Verificar logs das aplicações
-3. Verificar conectividade entre instâncias
-4. Verificar logs do OTel Collector ou Alloy
-5. Verificar data sources no Grafana
-
-## Custos Estimados (us-east-1)
-
-| Recurso | Tipo | Custo/hora | Custo/mês (730h) |
-|---------|------|------------|------------------|
-| Instância 1 | t3.medium | $0.0416 | ~$30 |
-| Instância 2 | t3.small | $0.0208 | ~$15 |
-| Storage (50 GB) | gp3 | - | ~$4 |
-| **Total** | | | **~$49/mês** |
-
-**Dica**: Use **t3.micro** (Free Tier) para testes rápidos.
-
-## Limpeza de Recursos
-
-### Parar Instâncias (preserva dados)
-
+**Cenário 2:**
 ```bash
-# Via Console
-EC2 → Instances → Select → Instance State → Stop
+# Verificar se apps estão enviando para Alloy
+docker-compose logs backend | grep -i "otlp\|exporter"
 
-# Via CLI
-aws ec2 stop-instances --instance-ids i-xxx i-yyy
+# Verificar logs do Alloy
+docker-compose logs alloy | grep -i "error\|refused"
+
+# Verificar se Alloy está enviando para backends
+curl http://localhost:12345/metrics | grep alloy_otelcol_exporter_sent
 ```
 
-### Terminar Instâncias (remove tudo)
-
+### Traces não aparecem no Jaeger
 ```bash
-# Via Console
-EC2 → Instances → Select → Instance State → Terminate
+# Verificar variáveis de ambiente das aplicações
+docker-compose exec frontend env | grep OTEL
+docker-compose exec backend env | grep OTEL
 
-# Via CLI
-aws ec2 terminate-instances --instance-ids i-xxx i-yyy
+# Verificar logs de instrumentação
+docker-compose logs frontend | grep -i "tracer\|span\|trace"
+docker-compose logs backend | grep -i "tracer\|span\|trace"
+
+# Verificar métricas do Jaeger
+curl http://IP_OBSERVABILITY_SERVER:14269/metrics | grep jaeger_collector_spans_received
 ```
 
-### Remover Security Groups e VPC
+### Logs não aparecem no Loki
+```bash
+# Verificar se aplicações estão gerando logs
+docker-compose logs backend | head -20
 
-1. Terminar todas as instâncias
-2. Deletar Security Groups
-3. Deletar Subnet
-4. Detach e deletar Internet Gateway
-5. Deletar VPC
+# Verificar se OTel Collector está enviando logs para Loki
+cd instancia-1-observability
+docker-compose logs otel-collector | grep -i "loki"
 
-## Automação com Terraform (Opcional)
-
-```hcl
-# Exemplo básico
-resource "aws_instance" "observability" {
-  ami           = "ami-0c55b159cbfafe1f0"  # Ubuntu 22.04
-  instance_type = "t3.medium"
-  
-  vpc_security_group_ids = [aws_security_group.observability.id]
-  subnet_id              = aws_subnet.public.id
-  
-  user_data = file("ec2-userdata/instancia-1.sh")
-  
-  tags = {
-    Name = "aula-06-observability"
-  }
-}
+# Testar Loki diretamente
+curl http://IP_OBSERVABILITY_SERVER:3100/ready
 ```
 
-## Próximos Passos
+### Performance e recursos
+```bash
+# Monitorar uso de recursos
+docker stats
 
-- Configurar [Instância 1](../instancia-1-observability/README.md)
-- Escolher cenário:
-  - [Cenário 1 - Via Collector](../scenario-1-via-collector/README.md)
-  - [Cenário 2 - Via Alloy](../scenario-2-via-alloy/README.md)
-- Explorar [Guia de OpenTelemetry](./opentelemetry-guide.md)
+# Verificar latência das aplicações
+time curl http://localhost:3001/api/users
+
+# Verificar cache hits
+docker-compose logs backend | grep "cache"
+```
+
+### Data Sources não conectam no Grafana
+```bash
+# Verificar conectividade interna do Docker
+cd instancia-1-observability
+docker-compose exec grafana ping prometheus
+docker-compose exec grafana ping loki
+docker-compose exec grafana ping jaeger
+
+# Verificar logs dos serviços
+docker-compose logs prometheus
+docker-compose logs loki
+docker-compose logs jaeger
+```
 
 ## Recursos Adicionais
 
-- [AWS EC2 Documentation](https://docs.aws.amazon.com/ec2/)
-- [AWS VPC Documentation](https://docs.aws.amazon.com/vpc/)
-- [Docker Installation](https://docs.docker.com/engine/install/ubuntu/)
+- [Guia de OpenTelemetry](./opentelemetry-guide.md)
+- [Guia do OTel Collector](./otel-collector-guide.md)
+- [Guia do Grafana Alloy](./alloy-guide.md)
+- [Guia de Instrumentação](./instrumentation-otel.md)
+- [Comparação de Cenários](./comparison-scenarios.md)
 - [Guia de User Data](./ec2-userdata.md)

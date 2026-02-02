@@ -1,10 +1,10 @@
 #!/bin/bash
 
 # =============================================================================
-# EC2 USER DATA SCRIPT - JAEGER TRACING STACK INSTANCE
+# EC2 USER DATA SCRIPT - OBSERVABILITY STACK INSTANCE
 # =============================================================================
-# Aula 05 - PosTech DevOps - Monitoramento OpenSource
-# Stack: Grafana + Jaeger + Code-server
+# Aula 06 - PosTech DevOps - Monitoramento OpenSource
+# Stack: Grafana + Prometheus + Loki + Jaeger + OpenTelemetry Collector
 # =============================================================================
 
 # Configurações de ambiente
@@ -114,9 +114,12 @@ echo "🔥 Configurando firewall..."
 ufw --force enable
 ufw allow ssh
 ufw allow 3000                              # Grafana
+ufw allow 9090                              # Prometheus
+ufw allow 3100                              # Loki
 ufw allow 16686                             # Jaeger UI
-ufw allow 14250                             # Jaeger Collector gRPC
-ufw allow 14268                             # Jaeger Collector HTTP
+ufw allow 4317                              # OTLP gRPC
+ufw allow 4318                              # OTLP HTTP
+ufw allow 4319                              # OTel Collector HTTP
 ufw allow 8080                              # Code-server
 check_status "Configuração do firewall"
 
@@ -128,33 +131,47 @@ systemctl is-active code-server && echo "✅ Code-server está rodando"
 # Finalização
 echo "=== ✅ Configuração concluída com sucesso em $(date) ==="
 echo ""
-echo "🎯 AULA 05 - STACK DE TRACING DISTRIBUÍDO PREPARADA"
-echo "======================================================="
+echo "🎯 AULA 06 - STACK DE OBSERVABILIDADE COM OPENTELEMETRY PREPARADA"
+echo "=================================================================="
 echo "🌐 Code-server disponível em: http://$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4):8080"
 echo "🔑 Senha: demo123"
 echo ""
-echo "📊 PRÓXIMOS PASSOS PARA AULA 05:"
-echo "1. Clonar repositório: git clone -b aula-05 https://github.com/Ed-Carlos-Marinho/PosTech-DevOps-e-Arquitetura-Cloud---Monitoramento-OpenSource.git"
-echo "2. Executar stack de tracing: docker-compose -f docker-compose-observability.yml up -d"
+echo "📊 PRÓXIMOS PASSOS PARA AULA 06:"
+echo "1. Clonar repositório: git clone -b aula-06 https://github.com/Ed-Carlos-Marinho/PosTech-DevOps-e-Arquitetura-Cloud---Monitoramento-OpenSource.git"
+echo "2. Executar stack de observabilidade: cd instancia-1-observability && docker-compose up -d"
 echo "3. Acessar interfaces:"
 echo "   - Grafana: http://$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4):3000 (admin/admin123)"
+echo "   - Prometheus: http://$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4):9090"
+echo "   - Loki: http://$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4):3100"
 echo "   - Jaeger UI: http://$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4):16686"
 echo ""
+echo "📝 IP PRIVADO DESTA INSTÂNCIA (use na Instância 2):"
+echo "   $(curl -s http://169.254.169.254/latest/meta-data/local-ipv4)"
+echo ""
 echo "🐳 Docker e Docker Compose instalados e configurados"
-echo "🔧 Sistema pronto para tracing distribuído com Jaeger"
+echo "🔧 Sistema pronto para OpenTelemetry e telemetria unificada"
 
 # =============================================================================
 # INFORMAÇÕES IMPORTANTES:
 # 
-# STACK DE TRACING: Grafana (3000) + Jaeger (16686)
+# STACK DE OBSERVABILIDADE: 
+# - Grafana (3000): Visualização unificada
+# - Prometheus (9090): Métricas
+# - Loki (3100): Logs
+# - Jaeger (16686): Traces distribuídos
+# - OpenTelemetry Collector (4319): Pipeline central
+# 
 # CODE-SERVER: http://IP:8080 (senha: demo123)
 # 
-# DATA SOURCE NO GRAFANA:
+# DATA SOURCES NO GRAFANA (pré-configurados):
+# - Prometheus: http://prometheus:9090
+# - Loki: http://loki:3100
 # - Jaeger: http://jaeger:16686
 #
 # COMANDOS ÚTEIS:
 # - Logs: sudo tail -f /var/log/user-data.log
 # - Status: systemctl status code-server
-# - Docker: docker-compose -f docker-compose-observability.yml ps
+# - Docker: cd instancia-1-observability && docker-compose ps
 # - Restart: systemctl restart code-server
+# - Ver logs da stack: docker-compose logs -f
 # =============================================================================

@@ -1,14 +1,14 @@
 #!/bin/bash
 
 # =============================================================================
-# EC2 USER DATA SCRIPT - DISTRIBUTED APPLICATIONS SETUP
+# EC2 USER DATA SCRIPT - INSTRUMENTED APPLICATIONS SETUP
 # =============================================================================
-# Script de configuração automática para instância de aplicações distribuídas (Instância 2)
-# Aula 05 - PosTech DevOps e Arquitetura Cloud - Monitoramento OpenSource
+# Script de configuração automática para instância de aplicações instrumentadas (Instância 2)
+# Aula 06 - PosTech DevOps e Arquitetura Cloud - Monitoramento OpenSource
 # 
 # Este script instala e configura automaticamente:
 # - Docker e Docker Compose
-# - Clona repositório com aplicações distribuídas instrumentadas
+# - Clona repositório com aplicações instrumentadas com OpenTelemetry
 # - Inicia stack de aplicações via Docker Compose
 # =============================================================================
 
@@ -25,7 +25,7 @@ export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 # Redireciona toda saída (stdout e stderr) para arquivo de log
 # Permite acompanhar a execução via: sudo tail -f /var/log/user-data.log
 exec > >(tee /var/log/user-data.log) 2>&1
-echo "=== Iniciando configuração das aplicações distribuídas em $(date) ==="
+echo "=== Iniciando configuração das aplicações instrumentadas em $(date) ==="
 
 # -----------------------------------------------------------------------------
 # FUNÇÃO DE VERIFICAÇÃO DE STATUS
@@ -87,8 +87,8 @@ check_status "Instalação do Docker Compose"
 
 echo "📥 Clonando repositório..."
 cd /home/ubuntu
-git clone -b aula-05 https://github.com/Ed-Carlos-Marinho/PosTech-DevOps-e-Arquitetura-Cloud---Monitoramento-OpenSource.git repo
-cd repo/distributed-app
+git clone -b aula-06 https://github.com/Ed-Carlos-Marinho/PosTech-DevOps-e-Arquitetura-Cloud---Monitoramento-OpenSource.git repo
+cd repo
 chown -R ubuntu:ubuntu /home/ubuntu/repo
 check_status "Clonagem do repositório"
 
@@ -96,10 +96,20 @@ check_status "Clonagem do repositório"
 # FASE 6: CONFIGURAÇÃO E INICIALIZAÇÃO DA STACK
 # =============================================================================
 
-echo "🚀 Iniciando stack de aplicações distribuídas..."
-# Iniciar stack usando docker-compose
-sudo -u ubuntu docker-compose -f docker-compose-app.yml up -d
-check_status "Inicialização da stack de aplicações distribuídas"
+echo "🚀 Iniciando stack de aplicações instrumentadas..."
+# IMPORTANTE: Escolher UM dos cenários abaixo antes de executar
+
+# CENÁRIO 1: Via OpenTelemetry Collector (descomente as 3 linhas abaixo)
+# cd scenario-1-via-collector
+# sed -i "s/OBSERVABILITY_IP/IP_PRIVADO_INSTANCIA_1/g" docker-compose.yml
+# sudo -u ubuntu docker-compose up -d
+
+# CENÁRIO 2: Via Grafana Alloy (descomente as 3 linhas abaixo)
+# cd scenario-2-via-alloy
+# sed -i "s/OBSERVABILITY_IP/IP_PRIVADO_INSTANCIA_1/g" alloy-config.alloy
+# sudo -u ubuntu docker-compose up -d
+
+check_status "Inicialização da stack de aplicações instrumentadas"
 
 # =============================================================================
 # FASE 7: CONFIGURAÇÃO DO FIREWALL
@@ -108,9 +118,9 @@ check_status "Inicialização da stack de aplicações distribuídas"
 echo "🔥 Configurando firewall..."
 ufw --force enable                          # Habilita firewall (força sem prompt)
 ufw allow ssh                               # Permite SSH (porta 22)
-ufw allow http                              # Permite HTTP (porta 80) - para frontend
+ufw allow 3001                              # Permite Frontend
 ufw allow 5000                              # Permite Backend API
-ufw allow 15672                             # Permite RabbitMQ Management UI
+ufw allow 12345                             # Permite Alloy UI (Cenário 2)
 check_status "Configuração do firewall"
 
 # =============================================================================
@@ -120,36 +130,36 @@ check_status "Configuração do firewall"
 echo "🔍 Verificando status dos serviços..."
 # Verifica se serviços estão ativos e reporta status
 systemctl is-active docker && echo "✅ Docker está rodando"
-sudo -u ubuntu docker-compose -f /home/ubuntu/repo/distributed-app/docker-compose-app.yml ps
 
 # =============================================================================
 # FINALIZAÇÃO E INFORMAÇÕES DE ACESSO
 # =============================================================================
 
-echo "=== ✅ Configuração das aplicações distribuídas concluída em $(date) ==="
+echo "=== ✅ Configuração das aplicações instrumentadas concluída em $(date) ==="
 echo ""
 echo "🚀 Serviços instalados e configurados:"
-echo "   - Frontend: http://$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4)"
+echo "   - Frontend: http://$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4):3001"
 echo "   - Backend API: http://$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4):5000"
-echo "   - RabbitMQ Management: http://$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4):15672 (guest/guest)"
-echo "   - Jaeger Agent Metrics: http://$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4):5778/metrics"
+echo "   - Alloy UI (Cenário 2): http://$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4):12345"
 echo ""
 echo "⚠️  PRÓXIMOS PASSOS MANUAIS:"
-echo "   1. Obter IP privado da instância de tracing (Instância 1)"
-echo "   2. Editar: /home/ubuntu/repo/distributed-app/docker-compose-app.yml"
-echo "   3. Substituir JAEGER_COLLECTOR_IP pelo IP real da Instância 1"
-echo "   4. Executar: cd /home/ubuntu/repo/distributed-app && docker-compose -f docker-compose-app.yml restart jaeger-agent"
-echo "   5. Testar aplicações: curl http://localhost/api/users"
-echo "   6. Verificar traces no Jaeger UI"
+echo "   1. Obter IP privado da instância de observabilidade (Instância 1)"
+echo "   2. Escolher um cenário (1 ou 2) no script"
+echo "   3. Editar o script e descomentar o cenário escolhido"
+echo "   4. Substituir IP_PRIVADO_INSTANCIA_1 pelo IP real da Instância 1"
+echo "   5. Executar o cenário escolhido manualmente"
+echo "   6. Testar aplicações: curl http://localhost:3001/api/users"
+echo "   7. Verificar telemetria no Grafana (Instância 1)"
 echo ""
 echo "🔧 Comandos úteis:"
-echo "   - Testar frontend: curl http://localhost/"
-echo "   - Listar usuários: curl http://localhost/api/users"
-echo "   - Listar produtos: curl http://localhost/api/products"
-echo "   - Criar pedido: curl -X POST http://localhost/api/orders -H 'Content-Type: application/json' -d '{\"user_id\":1,\"total_amount\":99.99}'"
-echo "   - Ver logs da stack: cd /home/ubuntu/repo/distributed-app && docker-compose -f docker-compose-app.yml logs -f"
-echo "   - Status da stack: cd /home/ubuntu/repo/distributed-app && docker-compose -f docker-compose-app.yml ps"
-echo "   - Verificar Jaeger Agent: curl http://localhost:5778/metrics"
+echo "   - Testar frontend: curl http://localhost:3001/health"
+echo "   - Testar backend: curl http://localhost:5000/health"
+echo "   - Listar usuários: curl http://localhost:3001/api/users"
+echo "   - Listar produtos: curl http://localhost:3001/api/products"
+echo "   - Criar pedido: curl -X POST http://localhost:3001/api/orders -H 'Content-Type: application/json' -d '{\"user_id\":1,\"total_amount\":99.99}'"
+echo "   - Ver logs da stack: cd ~/repo/[cenario] && docker-compose logs -f"
+echo "   - Status da stack: docker-compose ps"
+echo "   - Verificar Alloy (Cenário 2): curl http://localhost:12345/metrics"
 echo "   - Logs de instalação: sudo tail -f /var/log/user-data.log"
 
 # =============================================================================
@@ -158,44 +168,46 @@ echo "   - Logs de instalação: sudo tail -f /var/log/user-data.log"
 # 
 # LOGS E TROUBLESHOOTING:
 # - Log de execução: /var/log/user-data.log
-# - Logs da stack: docker-compose -f docker-compose-app.yml logs
-# - Logs específicos: docker-compose -f docker-compose-app.yml logs [service]
+# - Logs da stack: docker-compose logs
+# - Logs específicos: docker-compose logs [service]
 #
 # ARQUIVOS DE CONFIGURAÇÃO:
-# - Docker Compose: /home/ubuntu/repo/distributed-app/docker-compose-app.yml
-# - Jaeger Agent config: /home/ubuntu/repo/distributed-app/jaeger-agent-config.yml
-# - Frontend: /home/ubuntu/repo/distributed-app/frontend/
-# - Backend: /home/ubuntu/repo/distributed-app/backend/
+# - Cenário 1: ~/repo/scenario-1-via-collector/docker-compose.yml
+# - Cenário 2: ~/repo/scenario-2-via-alloy/docker-compose.yml
+# - Cenário 2: ~/repo/scenario-2-via-alloy/alloy-config.alloy
+# - Frontend: ~/repo/[cenario]/frontend/
+# - Backend: ~/repo/[cenario]/backend/
 #
 # PORTAS UTILIZADAS:
 # - 22: SSH
-# - 80: HTTP (Frontend)
+# - 3001: Frontend
 # - 5000: Backend API
 # - 5432: PostgreSQL
 # - 6379: Redis
-# - 5672: RabbitMQ AMQP
-# - 15672: RabbitMQ Management UI
-# - 6831/6832: Jaeger Agent (UDP)
-# - 5778: Jaeger Agent HTTP
+# - 12345: Alloy UI (Cenário 2)
 #
 # COMANDOS DE MANUTENÇÃO:
-# - Reiniciar stack: docker-compose -f docker-compose-app.yml restart
-# - Parar stack: docker-compose -f docker-compose-app.yml down
-# - Iniciar stack: docker-compose -f docker-compose-app.yml up -d
-# - Ver logs: docker-compose -f docker-compose-app.yml logs -f
-# - Status: docker-compose -f docker-compose-app.yml ps
-# - Rebuild serviços: docker-compose -f docker-compose-app.yml build
+# - Reiniciar stack: docker-compose restart
+# - Parar stack: docker-compose down
+# - Iniciar stack: docker-compose up -d
+# - Ver logs: docker-compose logs -f
+# - Status: docker-compose ps
+# - Rebuild serviços: docker-compose build
+#
+# CENÁRIOS DISPONÍVEIS:
+# 1. Via OpenTelemetry Collector: Apps → OTel Collector → Backends
+# 2. Via Grafana Alloy: Apps → Alloy (local) → Backends
 #
 # CONFIGURAÇÃO FINAL NECESSÁRIA:
-# 1. Substituir JAEGER_COLLECTOR_IP pelo IP real da instância 1 em docker-compose-app.yml
-# 2. Verificar traces no Jaeger UI
-# 3. Testar rastreamento de requisições entre serviços
+# 1. Escolher cenário (1 ou 2)
+# 2. Substituir IP_PRIVADO_INSTANCIA_1 pelo IP real
+# 3. Executar cenário escolhido
+# 4. Verificar telemetria no Grafana (Instância 1)
 #
 # ENDPOINTS DAS APLICAÇÕES:
-# - GET /: Página inicial do frontend
 # - GET /health: Health check (frontend e backend)
-# - GET /api/users: Lista usuários (com cache)
-# - GET /api/products: Lista produtos (com cache)
+# - GET /api/users: Lista usuários (com cache Redis)
+# - GET /api/products: Lista produtos (com cache Redis)
 # - GET /api/orders: Lista pedidos
-# - POST /api/orders: Cria novo pedido (operação complexa)
+# - POST /api/orders: Cria novo pedido (operação complexa com traces)
 # =============================================================================

@@ -38,28 +38,16 @@ processors:
         action: delete
 
 exporters:
-  prometheus:
-    endpoint: "0.0.0.0:8889"
-    namespace: otel
-    const_labels:
-      collector: central
   prometheusremotewrite:
     endpoint: http://prometheus:9090/api/v1/write
     tls:
       insecure: true
-  loki:
-    endpoint: http://loki:3100/loki/api/v1/push
-    labels:
-      attributes:
-        service.name: "service_name"
-        level: "level"
-        job: "job"
   otlp/jaeger:
     endpoint: jaeger:4317
     tls:
       insecure: true
-  logging:
-    loglevel: info
+  debug:
+    verbosity: normal
     sampling_initial: 5
     sampling_thereafter: 200
 
@@ -77,18 +65,23 @@ service:
     traces:
       receivers: [otlp]
       processors: [memory_limiter, batch, resource, attributes]
-      exporters: [otlp/jaeger, logging]
+      exporters: [otlp/jaeger, debug]
     metrics:
       receivers: [otlp, prometheus]
       processors: [memory_limiter, batch, resource]
-      exporters: [prometheusremotewrite, prometheus, logging]
+      exporters: [prometheusremotewrite, debug]
     logs:
       receivers: [otlp]
       processors: [memory_limiter, batch, resource]
-      exporters: [loki, logging]
+      exporters: [debug]
   telemetry:
     logs:
       level: info
     metrics:
       level: detailed
-      address: 0.0.0.0:8888
+      readers:
+        - pull:
+            exporter:
+              prometheus:
+                host: 0.0.0.0
+                port: 8888
