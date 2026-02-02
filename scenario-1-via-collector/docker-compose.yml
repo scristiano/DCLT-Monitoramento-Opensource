@@ -1,0 +1,103 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: postgres
+    environment:
+      POSTGRES_DB: appdb
+      POSTGRES_USER: appuser
+      POSTGRES_PASSWORD: apppass
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U appuser -d appdb"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: backend
+    environment:
+      - OTEL_SERVICE_NAME=backend-service
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://OBSERVABILITY_IP:4319
+      - OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+      - OTEL_TRACES_EXPORTER=otlp
+      - OTEL_METRICS_EXPORTER=otlp
+      - OTEL_LOGS_EXPORTER=otlp
+      - OTEL_PYTHON_LOGGING_AUTO_INSTRUMENTATION_ENABLED=true
+      - DATABASE_URL=postgresql://appuser:apppass@postgres:5432/appdb
+      - REDIS_URL=redis://redis:6379
+    ports:
+      - "5000:5000"
+    networks:
+      - app-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: frontend
+    environment:
+      - OTEL_SERVICE_NAME=frontend-service
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://OBSERVABILITY_IP:4319
+      - OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+      - BACKEND_URL=http://backend:5000
+    ports:
+      - "3001:3000"
+    networks:
+      - app-network
+    depends_on:
+      - backend
+
+  traffic-generator:
+    image: curlimages/curl:latest
+    container_name: traffic-generator
+    command: >
+      sh -c "
+      echo 'Waiting for services to be ready...';
+      sleep 15;
+      while true; do
+        echo '[$(date)] Generating traffic...';
+        curl -s http://frontend:3000/api/users > /dev/null && echo '  ✓ GET /api/users';
+        sleep 5;
+        curl -s http://frontend:3000/api/orders > /dev/null && echo '  ✓ GET /api/orders';
+        sleep 5;
+        curl -s http://frontend:3000/api/products > /dev/null && echo '  ✓ GET /api/products';
+        sleep 10;
+      done
+      "
+    networks:
+      - app-network
+    depends_on:
+      - frontend
+    restart: unless-stopped
+
+networks:
+  app-network:
+    driver: bridge
+
+volumes:
+  postgres-data:
