@@ -1,0 +1,125 @@
+// Grafana Alloy Configuration
+// Receives OTLP telemetry from applications and forwards to backends
+
+// ============================================================================
+// OTLP Receivers - Receive telemetry from applications
+// ============================================================================
+
+// OTLP HTTP Receiver (port 4318)
+otelcol.receiver.otlp "default" {
+  http {
+    endpoint = "0.0.0.0:4318"
+  }
+
+  grpc {
+    endpoint = "0.0.0.0:4317"
+  }
+
+  output {
+    metrics = [otelcol.processor.batch.default.input]
+    logs    = [otelcol.processor.batch.default.input]
+    traces  = [otelcol.processor.batch.default.input]
+  }
+}
+
+// ============================================================================
+// Processors - Process and enrich telemetry
+// ============================================================================
+
+// Batch Processor - Batch telemetry for efficiency
+otelcol.processor.batch "default" {
+  timeout          = "5s"
+  send_batch_size  = 100
+
+  output {
+    metrics = [otelcol.processor.attributes.default.input]
+    logs    = [otelcol.processor.attributes.default.input]
+    traces  = [otelcol.processor.attributes.default.input]
+  }
+}
+
+// Attributes Processor - Add common attributes
+otelcol.processor.attributes "default" {
+  action {
+    key    = "deployment.environment"
+    value  = "production"
+    action = "insert"
+  }
+
+  action {
+    key    = "telemetry.agent"
+    value  = "alloy"
+    action = "insert"
+  }
+
+  output {
+    metrics = [otelcol.exporter.prometheus.default.input]
+    logs    = [otelcol.exporter.loki.default.input]
+    traces  = [otelcol.exporter.otlp.jaeger.input]
+  }
+}
+
+// ============================================================================
+// Exporters - Send telemetry to backends
+// ============================================================================
+
+// Prometheus Exporter - Send metrics to Prometheus
+otelcol.exporter.prometheus "default" {
+  forward_to = [prometheus.remote_write.default.receiver]
+}
+
+prometheus.remote_write "default" {
+  endpoint {
+    url = "http://OBSERVABILITY_IP:9090/api/v1/write"
+
+    queue_config {
+      capacity          = 10000
+      max_shards        = 10
+      min_shards        = 1
+      max_samples_per_send = 5000
+      batch_send_deadline  = "5s"
+    }
+
+    metadata_config {
+      send_interval = "1m"
+    }
+  }
+}
+
+// Loki Exporter - Send logs to Loki
+otelcol.exporter.loki "default" {
+  forward_to = [loki.write.default.receiver]
+}
+
+loki.write "default" {
+  endpoint {
+    url = "http://OBSERVABILITY_IP:3100/loki/api/v1/push"
+
+    queue_config {
+      capacity          = 10000
+      max_shards        = 10
+      min_shards        = 1
+      max_samples_per_send = 5000
+      batch_send_deadline  = "5s"
+    }
+  }
+}
+
+// Jaeger Exporter - Send traces to Jaeger
+otelcol.exporter.otlp "jaeger" {
+  client {
+    endpoint = "OBSERVABILITY_IP:4318"
+    tls {
+      insecure = true
+    }
+  }
+}
+
+// ============================================================================
+// Logging - Alloy internal logging
+// ============================================================================
+
+logging {
+  level  = "info"
+  format = "logfmt"
+}
