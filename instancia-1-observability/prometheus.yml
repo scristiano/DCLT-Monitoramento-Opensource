@@ -18,12 +18,6 @@ scrape_configs:
         labels:
           service: 'otel-collector'
 
-  - job_name: 'otel-metrics'
-    static_configs:
-      - targets: ['otel-collector:8889']
-        labels:
-          service: 'otel-exporter'
-
   - job_name: 'grafana'
     static_configs:
       - targets: ['grafana:3000']
