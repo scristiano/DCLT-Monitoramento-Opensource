@@ -3,6 +3,16 @@
 # =============================================================================
 # Aula 07 - PosTech DevOps - Observabilidade no Kubernetes
 # Configuração para Promtail (Coleta de Logs)
+#
+# Versões testadas:
+# - Helm Chart: 6.x+ (grafana/promtail)
+# - Kubernetes: 1.34
+# - Promtail: 3.x+
+#
+# Instalação:
+# helm upgrade --install promtail grafana/promtail \
+#   --namespace monitoring \
+#   --values helm-values/loki-stack/promtail-values.yaml
 # =============================================================================
 
 # =============================================================================
@@ -16,11 +26,11 @@ config:
   
   # Configuração de posições
   positions:
-    filename: /tmp/positions.yaml
+    filename: /tmp/positions/positions.yaml
   
   # Configuração de clientes (conexão com Loki)
   clients:
-    - url: http://loki.monitoring.svc.cluster.local:3100/loki/api/v1/push
+    - url: http://loki-gateway.monitoring.svc.cluster.local/loki/api/v1/push
       tenant_id: 1
   
   # Configuração de scraping
@@ -86,6 +96,8 @@ volumeMounts:
   - name: varlibdockercontainers
     mountPath: /var/lib/docker/containers
     readOnly: true
+  - name: positions
+    mountPath: /tmp/positions
 
 volumes:
   - name: pods
@@ -94,6 +106,10 @@ volumes:
   - name: varlibdockercontainers
     hostPath:
       path: /var/lib/docker/containers
+  - name: positions
+    hostPath:
+      path: /var/lib/promtail
+      type: DirectoryOrCreate
 
 # =============================================================================
 # SECURITY CONFIGURATION

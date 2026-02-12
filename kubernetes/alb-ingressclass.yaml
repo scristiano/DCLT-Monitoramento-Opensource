@@ -1,0 +1,47 @@
+# =============================================================================
+# ALB SETUP FOR EKS AUTO MODE
+# =============================================================================
+# Este arquivo cria os recursos necessários para usar ALB no EKS Auto Mode
+# =============================================================================
+
+---
+# IngressClassParams - Configurações específicas do AWS ALB
+apiVersion: eks.amazonaws.com/v1
+kind: IngressClassParams
+metadata:
+  name: alb
+spec:
+  # Esquema do Load Balancer (internet-facing ou internal)
+  scheme: internet-facing
+  
+  # Tipo de endereço IP (ipv4 ou dualstack)
+  ipAddressType: ipv4
+  
+  # Tags para o ALB (opcional)
+  tags:
+    - key: Environment
+      value: lab
+    - key: Project
+      value: observability
+    - key: ManagedBy
+      value: eks-auto-mode
+
+---
+# IngressClass - Define o controller que gerenciará os Ingress
+apiVersion: networking.k8s.io/v1
+kind: IngressClass
+metadata:
+  name: alb
+  annotations:
+    # Define esta IngressClass como padrão
+    # Ingress sem ingressClassName usarão esta automaticamente
+    ingressclass.kubernetes.io/is-default-class: "true"
+spec:
+  # Controller do EKS Auto Mode para ALB
+  controller: eks.amazonaws.com/alb
+  
+  # Referência aos parâmetros específicos do AWS
+  parameters:
+    apiGroup: eks.amazonaws.com
+    kind: IngressClassParams
+    name: alb

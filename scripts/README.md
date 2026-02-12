@@ -4,6 +4,53 @@ Este diretório contém scripts para automatizar a criação e gerenciamento do 
 
 ## Scripts Disponíveis
 
+### ⚙️ `setup-eks.sh`
+Script de configuração pós-criação do cluster EKS. Configura tags, IngressClass, StorageClass, e recursos IAM para Loki.
+
+**Recursos configurados:**
+- Tags nas subnets para ALB (kubernetes.io/role/elb)
+- OIDC Provider (se não existir)
+- Buckets S3 para Loki com Account ID no nome (chunks, ruler, admin)
+- IAM Policy e Role para Loki (IRSA)
+- IngressClass ALB
+- StorageClass GP3
+- Namespace monitoring
+- Ingress base (eks-lab-alb) com certificado ACM
+- NodePool família T + Spot (modo desenvolvimento)
+
+**Uso básico:**
+```bash
+# Produção (sem restrição de instâncias)
+./scripts/setup-eks.sh
+
+# Desenvolvimento (família T + Spot)
+./scripts/setup-eks.sh --env-dev
+
+# Com certificado ACM específico
+./scripts/setup-eks.sh --certificate-arn arn:aws:acm:us-east-1:123456789012:certificate/abc123...
+
+# Com parâmetros customizados
+./scripts/setup-eks.sh --env-dev --cluster-name meu-cluster --region us-west-2 --certificate-arn arn:aws:acm:...
+```
+
+**Parâmetros:**
+- `--env-dev` - Configura NodePool para família T com Spot (desenvolvimento)
+- `--cluster-name NAME` - Nome do cluster (padrão: observability-lab-cluster)
+- `--region REGION` - Região AWS (padrão: us-east-1)
+- `--certificate-arn ARN` - ARN do certificado ACM para HTTPS (opcional)
+- `--help` - Mostra ajuda
+
+**Certificado ACM:**
+- Se não fornecido via `--certificate-arn`, o script tentará detectar certificados existentes
+- Se múltiplos certificados forem encontrados, você poderá escolher interativamente
+- Se nenhum certificado for encontrado, o Ingress será criado com HTTP apenas
+- Você pode executar o script novamente com `--certificate-arn` para adicionar HTTPS depois
+
+**Verificações automáticas:**
+- Add-ons essenciais (aws-ebs-csi-driver, aws-efs-csi-driver, coredns, metrics-server)
+- Credenciais AWS
+- Conexão com cluster
+
 ### 🚀 `create-eks-cluster.sh`
 Script completo para criação automatizada do cluster EKS com todos os add-ons necessários.
 
@@ -42,7 +89,7 @@ export DESIRED_SIZE="4"
 - `MIN_SIZE` (padrão: 2)
 - `MAX_SIZE` (padrão: 6)
 - `DESIRED_SIZE` (padrão: 3)
-- `KUBERNETES_VERSION` (padrão: 1.34)
+- `KUBERNETES_VERSION` (padrão: 1.34 - versão estável recomendada)
 
 ### 🗑️ `delete-eks-cluster.sh`
 Script para limpeza completa do cluster EKS e todos os recursos associados.
@@ -102,6 +149,27 @@ aws sts get-caller-identity
 ```
 
 ## Exemplos de Uso
+
+### Cenário 0: Configuração Inicial do Cluster
+```bash
+# Após criar o cluster, executar setup
+./scripts/setup-eks.sh --env-dev
+
+# Verificar recursos criados
+kubectl get ingressclass
+kubectl get storageclass
+kubectl get ingress -n monitoring
+
+# Verificar buckets S3 (incluem Account ID no nome)
+aws s3 ls | grep loki-observability-lab
+
+# Verificar IAM Role
+aws iam get-role --role-name LokiS3AccessRole
+
+# Verificar values.yaml atualizado
+grep -A 3 "bucketNames:" helm-values/loki-stack/values.yaml
+grep "eks.amazonaws.com/role-arn" helm-values/loki-stack/values.yaml
+```
 
 ### Cenário 1: Cluster para Desenvolvimento
 ```bash
@@ -242,31 +310,46 @@ kubectl get events -n kube-system --sort-by='.lastTimestamp'
 
 Após criar o cluster com sucesso:
 
-1. **Seguir Documentação de Deploy:**
+1. **Executar Setup do Cluster:**
+   ```bash
+   # Configurar tags, IAM, IngressClass, StorageClass, etc.
+   ./scripts/setup-eks.sh --env-dev
+   ```
+
+2. **Seguir Documentação de Deploy:**
    ```bash
    # Consultar guia completo
    cat docs/deploy-observability-stack.md
    ```
 
-2. **Instalar Metrics Server:**
-   ```bash
-   helm repo add metrics-server https://kubernetes-sigs.github.io/metrics-server/
-   helm install metrics-server metrics-server/metrics-server -n kube-system -f helm-values/metrics-server/values.yaml
-   ```
-
 3. **Instalar Stack de Observabilidade:**
    ```bash
-   # Seguir passo a passo na documentação
-   # docs/deploy-observability-stack.md
+   # Instalar kube-prometheus-stack
+   helm upgrade --install kube-prometheus-stack prometheus-community/kube-prometheus-stack \
+     --namespace monitoring \
+     --values helm-values/kube-prometheus-stack/values.yaml
+   
+   # Instalar Loki (role IAM já configurada pelo setup-eks.sh)
+   helm upgrade --install loki grafana/loki \
+     --namespace monitoring \
+     --values helm-values/loki-stack/values.yaml
+   
+   # Instalar Promtail
+   helm upgrade --install promtail grafana/promtail \
+     --namespace monitoring \
+     --values helm-values/loki-stack/promtail-values.yaml
    ```
 
-4. **Executar Exercícios:**
+4. **Verificar Instalação:**
    ```bash
-   cd exercises/01-deploy-prometheus-stack
+   kubectl get pods -n monitoring
+   kubectl get ingress -n monitoring
    ```
 
 5. **Acessar Grafana:**
    ```bash
-   kubectl get svc -n monitoring grafana
-   # Acessar via LoadBalancer URL
+   # Obter URL do ALB
+   kubectl get ingress -n monitoring eks-lab-ingress
+   # Acessar: https://grafana.demo.lynxnetwork.com.br
+   # Credenciais: admin / admin123
    ```

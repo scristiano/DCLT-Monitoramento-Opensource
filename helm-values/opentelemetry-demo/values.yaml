@@ -1,0 +1,138 @@
+# =============================================================================
+# OPENTELEMETRY DEMO VALUES
+# =============================================================================
+# Aula 07 - PosTech DevOps - Observabilidade no Kubernetes
+# Aplicação de demonstração com microserviços para testar observabilidade
+#
+# Versões testadas:
+# - Helm Chart: 0.x+ (open-telemetry/opentelemetry-demo)
+# - Kubernetes: 1.34
+#
+# IMPORTANTE: Antes de instalar, substitua:
+# - alb.ingress.kubernetes.io/certificate-arn: <SEU_ARN_DO_CERTIFICADO_ACM>
+# - hosts: astronomy-shop.demo.lynxnetwork.com.br (use seu domínio)
+#
+# Instalação:
+# helm upgrade --install otel-demo open-telemetry/opentelemetry-demo \
+#   --namespace app --create-namespace \
+#   --values helm-values/opentelemetry-demo/values.yaml
+# =============================================================================
+
+# =============================================================================
+# OPENTELEMETRY COLLECTOR CONFIGURATION
+# =============================================================================
+opentelemetry-collector:
+  enabled: true
+  
+  # Habilitar ServiceMonitor para Prometheus scraping
+  serviceMonitor:
+    enabled: true
+    extraLabels:
+      release: kube-prometheus-stack
+  
+  config:
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:4317
+          http:
+            endpoint: 0.0.0.0:4318
+    
+    processors:
+      batch: {}
+      memory_limiter:
+        check_interval: 5s
+        limit_mib: 512
+    
+    exporters:
+      # Exportar para Prometheus (métricas)
+      prometheus:
+        endpoint: 0.0.0.0:8888
+        resource_to_telemetry_conversion:
+          enabled: true
+      
+      # Exportar traces para Jaeger
+      otlp:
+        endpoint: jaeger-collector.monitoring.svc.cluster.local:4317
+        tls:
+          insecure: true
+      
+      # Debug (para troubleshooting)
+      debug:
+        verbosity: detailed
+    
+    service:
+      pipelines:
+        traces:
+          receivers: [otlp]
+          processors: [memory_limiter, batch]
+          exporters: [otlp, debug]
+        
+        metrics:
+          receivers: [otlp]
+          processors: [memory_limiter, batch]
+          exporters: [prometheus, debug]
+        
+        logs:
+          receivers: [otlp]
+          processors: [memory_limiter, batch]
+          exporters: [debug]
+
+# =============================================================================
+# COMPONENTS CONFIGURATION
+# =============================================================================
+components:
+  # Frontend Proxy (Nginx)
+  frontend-proxy:
+    enabled: true
+    service:
+      type: ClusterIP
+    ingress:
+      enabled: true
+      ingressClassName: alb
+      annotations:
+        # Configurações do ALB
+        alb.ingress.kubernetes.io/scheme: internet-facing
+        alb.ingress.kubernetes.io/target-type: ip
+        alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS": 443}]'
+        
+        # ⚠️ IMPORTANTE: Substitua pelo ARN do seu certificado ACM
+        # Para obter: AWS Console → Certificate Manager → Copiar ARN
+        # Ou via CLI: aws acm list-certificates --region us-east-1
+        alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:REGION:ACCOUNT_ID:certificate/CERTIFICATE_ID
+        alb.ingress.kubernetes.io/ssl-redirect: '443'
+        
+        # Health check padrão
+        alb.ingress.kubernetes.io/healthcheck-interval-seconds: '15'
+        alb.ingress.kubernetes.io/healthcheck-timeout-seconds: '5'
+        alb.ingress.kubernetes.io/healthy-threshold-count: '2'
+        alb.ingress.kubernetes.io/unhealthy-threshold-count: '2'
+      hosts:
+        - host: astronomy-shop.demo.lynxnetwork.com.br  # ⚠️ Substitua pelo seu domínio
+          paths:
+            - path: /
+              pathType: Prefix
+              port: 8080
+  
+  # Frontend (Web Store)
+  frontend:
+    enabled: true
+    envOverrides:
+      - name: PUBLIC_OTEL_EXPORTER_OTLP_TRACES_ENDPOINT
+        value: http://astronomy-shop.demo.lynxnetwork.com.br/otlp-http/v1/traces
+
+# =============================================================================
+# OBSERVABILITY BACKENDS (Desabilitar - usar nossa stack)
+# =============================================================================
+jaeger:
+  enabled: false
+
+grafana:
+  enabled: false
+
+prometheus:
+  enabled: false
+
+opensearch:
+  enabled: false

@@ -1,35 +1,107 @@
 # =============================================================================
-# LOKI VALUES
+# LOKI VALUES - SimpleScalable Mode
 # =============================================================================
 # Aula 07 - PosTech DevOps - Observabilidade no Kubernetes
-# Configuração para Loki (Agregação de Logs)
+# Configuração para Loki (Agregação de Logs) em modo SimpleScalable
+#
+# Versões testadas:
+# - Helm Chart: 6.x+ (grafana/loki)
+# - Kubernetes: 1.34
+# - Loki: 3.x+
+#
+# Pré-requisitos:
+# - Buckets S3 criados (executar scripts/setup-eks.sh)
+# - IAM Role configurada com IRSA
+# - StorageClass gp3 disponível
+#
+# Instalação:
+# helm upgrade --install loki grafana/loki \
+#   --namespace monitoring \
+#   --values helm-values/loki-stack/values.yaml
 # =============================================================================
 
 # =============================================================================
 # DEPLOYMENT MODE
 # =============================================================================
-deploymentMode: SingleBinary
+deploymentMode: SimpleScalable
 
 # =============================================================================
-# DISABLE OTHER COMPONENTS
+# READ COMPONENT (Query)
 # =============================================================================
 read:
-  replicas: 0
-
-write:
-  replicas: 0
-
-backend:
-  replicas: 0
+  replicas: 2
+  
+  resources:
+    requests:
+      memory: 256Mi
+      cpu: 100m
+    limits:
+      memory: 512Mi
+      cpu: 200m
+  
+  # Autoscaling
+  autoscaling:
+    enabled: false
+    minReplicas: 2
+    maxReplicas: 4
+    targetCPUUtilizationPercentage: 80
+    targetMemoryUtilizationPercentage: 80
 
 # =============================================================================
-# DISABLE CACHES TO SAVE RESOURCES
+# WRITE COMPONENT (Ingester + Distributor)
+# =============================================================================
+write:
+  replicas: 2
+  
+  resources:
+    requests:
+      memory: 512Mi
+      cpu: 200m
+    limits:
+      memory: 1Gi
+      cpu: 400m
+  
+  # Persistence para WAL (Write-Ahead Log)
+  # WAL é necessário para durabilidade antes de enviar ao S3
+  persistence:
+    enabled: true
+    storageClass: gp3
+    size: 2Gi  # Reduzido para lab (WAL é temporário)
+
+# =============================================================================
+# BACKEND COMPONENT (Query Scheduler + Compactor)
+# =============================================================================
+backend:
+  replicas: 1
+  
+  resources:
+    requests:
+      memory: 256Mi
+      cpu: 100m
+    limits:
+      memory: 512Mi
+      cpu: 200m
+  
+  # Persistence para Compactor working directory
+  persistence:
+    enabled: true
+    storageClass: gp3
+    size: 5Gi  # Para compactação e índices temporários
+
+# =============================================================================
+# CACHES (Opcional - desabilitado para economizar recursos)
 # =============================================================================
 chunksCache:
   enabled: false
+  # Para produção, habilitar com Redis/Memcached
+  # enabled: true
+  # allocatedMemory: 512
 
 resultsCache:
   enabled: false
+  # Para produção, habilitar com Redis/Memcached
+  # enabled: true
+  # allocatedMemory: 256
 
 # =============================================================================
 # LOKI CONFIGURATION
@@ -42,24 +114,27 @@ loki:
   server:
     http_listen_port: 3100
     grpc_listen_port: 9096
+    grpc_server_max_recv_msg_size: 104857600  # 100MB
+    grpc_server_max_send_msg_size: 104857600  # 100MB
   
-  # Configuração de storage
+  # Configuração de storage - S3
   storage:
-    type: filesystem
-    filesystem:
-      chunks_directory: /var/loki/chunks
-      rules_directory: /var/loki/rules
+    type: s3
     bucketNames:
-      chunks: chunks
-      ruler: ruler
-      admin: admin
+      chunks: loki-observability-lab-chunks-ACCOUNT_ID  # Será substituído automaticamente pelo script setup-eks.sh
+      ruler: loki-observability-lab-ruler-ACCOUNT_ID  # Será substituído automaticamente pelo script setup-eks.sh
+      admin: loki-observability-lab-admin-ACCOUNT_ID  # Será substituído automaticamente pelo script setup-eks.sh
+    s3:
+      region: us-east-1
+      # Usar IRSA (IAM Roles for Service Accounts) para autenticação
+      # Não precisa de accessKeyId/secretAccessKey
   
   # Configuração de schema
   schemaConfig:
     configs:
       - from: 2024-04-01
         store: tsdb
-        object_store: filesystem
+        object_store: s3
         schema: v13
         index:
           prefix: loki_index_
@@ -68,22 +143,57 @@ loki:
   # Configuração de limites
   limits_config:
     retention_period: 168h  # 7 days
-    ingestion_rate_mb: 4
-    ingestion_burst_size_mb: 8
-    max_concurrent_tail_requests: 5
+    ingestion_rate_mb: 10
+    ingestion_burst_size_mb: 20
+    max_concurrent_tail_requests: 10
     max_cache_freshness_per_query: 10m
+    max_query_parallelism: 32
+    max_streams_per_user: 10000
+    max_global_streams_per_user: 50000
+    split_queries_by_interval: 15m
   
-  # Configuração de compactação (desabilitada para evitar erro)
+  # Configuração de compactação
   compactor:
     working_directory: /var/loki/compactor
     compaction_interval: 10m
-    retention_enabled: false
+    retention_enabled: true
+    retention_delete_delay: 2h
+    retention_delete_worker_count: 150
+    delete_request_store: s3
+  
+  # Configuração de query
+  query_scheduler:
+    max_outstanding_requests_per_tenant: 2048
+  
+  # Configuração de frontend
+  frontend:
+    max_outstanding_per_tenant: 2048
+    compress_responses: true
+  
+  # Configuração de ingester
+  ingester:
+    chunk_idle_period: 30m
+    chunk_block_size: 262144
+    chunk_encoding: snappy
+    chunk_retain_period: 1m
+    max_chunk_age: 2h
+    wal:
+      enabled: true
+      dir: /var/loki/wal
 
 # =============================================================================
-# SINGLE BINARY CONFIGURATION
+# SINGLE BINARY CONFIGURATION (Disabled)
 # =============================================================================
 singleBinary:
-  # Recursos computacionais muito reduzidos
+  replicas: 0
+
+# =============================================================================
+# GATEWAY CONFIGURATION
+# =============================================================================
+gateway:
+  enabled: true
+  replicas: 1
+  
   resources:
     requests:
       memory: 64Mi
@@ -92,38 +202,33 @@ singleBinary:
       memory: 128Mi
       cpu: 50m
   
-  # Réplicas
-  replicas: 1
-  
-  # Storage persistente
-  persistence:
-    enabled: true
-    storageClass: gp2
-    size: 5Gi
-  
-  # Configurações de segurança
-  securityContext:
-    runAsNonRoot: true
-    runAsUser: 10001
-    fsGroup: 10001
-
-# =============================================================================
-# SERVICE CONFIGURATION
-# =============================================================================
-gateway:
-  enabled: false
+  # Ingress para expor o Loki (opcional)
+  ingress:
+    enabled: false
 
 # =============================================================================
 # MONITORING CONFIGURATION
 # =============================================================================
 monitoring:
   serviceMonitor:
-    enabled: false
+    enabled: true
+    labels:
+      release: kube-prometheus-stack
   
   selfMonitoring:
     enabled: false
     grafanaAgent:
       installOperator: false
+
+# =============================================================================
+# SERVICE ACCOUNT CONFIGURATION
+# =============================================================================
+serviceAccount:
+  create: true
+  name: loki
+  annotations:
+    # Será preenchido automaticamente pelo script setup-eks.sh
+    eks.amazonaws.com/role-arn: arn:aws:iam::ACCOUNT_ID:role/LokiS3AccessRole  # Será substituído automaticamente pelo script setup-eks.sh
 
 # =============================================================================
 # TEST CONFIGURATION

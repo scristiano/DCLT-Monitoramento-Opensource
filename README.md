@@ -1,282 +1,262 @@
-# Aula 07 - PosTech DevOps e Arquitetura Cloud
+# Aula 07 - Observabilidade no Kubernetes
 
-Este repositório contém os materiais da **Aula 07** do módulo **Monitoramento OpenSource** da PosTech DevOps e Arquitetura Cloud.
+Materiais práticos da **Aula 07** do módulo **Monitoramento OpenSource** da PosTech DevOps e Arquitetura Cloud.
 
-## Observabilidade no Kubernetes
+---
 
-**Objetivo:** Integrar parte da stack de observabilidade (Prometheus, Grafana, Loki) dentro de um cluster Kubernetes, entendendo as melhores práticas de deployment e coleta de dados.
+## 📋 Índice
 
-**Teoria:** Conceitos de observabilidade em ambientes orquestrados; uso do Prometheus Operator; configuração de ServiceMonitor e PodMonitor; coleta de métricas de aplicações, pods e nodes; integração com Grafana e Loki; boas práticas de deployment e descoberta automática de métricas.
+- [Visão Geral](#visão-geral)
+- [Versões Recomendadas](#versões-recomendadas)
+- [Arquitetura](#arquitetura)
+- [Início Rápido](#início-rápido)
+- [Guias Detalhados](#guias-detalhados)
+- [Estrutura do Projeto](#estrutura-do-projeto)
+- [Comandos Úteis](#comandos-úteis)
+- [Limpeza do Ambiente](#limpeza-do-ambiente)
 
-## Arquitetura da Aula 07
+---
 
-### Ambiente de Laboratório Kubernetes
+## Visão Geral
 
-- **EKS Cluster**: Amazon Elastic Kubernetes Service para demonstração de observabilidade nativa
-  - Prometheus Operator (gerenciamento declarativo de monitoramento)
-  - Grafana (visualização unificada de métricas e logs)
-  - Loki (agregação de logs otimizada para Kubernetes)
-  - ServiceMonitor e PodMonitor (descoberta automática de métricas)
-  - Aplicações demo instrumentadas
+Aprenda a implementar observabilidade completa em ambientes Kubernetes usando ferramentas open-source modernas.
 
-- **Instância EC2 Bastion**: Estação de trabalho para execução de comandos
-  - kubectl (cliente Kubernetes)
-  - helm (gerenciador de pacotes Kubernetes)
-  - code-server (VS Code no navegador)
-  - AWS CLI (integração com serviços AWS)
-  - Ferramentas de troubleshooting
+### 🎯 Objetivos
 
-### Novidades da Aula 07:
-- **Kubernetes Nativo**: Observabilidade em ambiente orquestrado real
+- Integrar stack de observabilidade (Prometheus, Grafana, Loki) em cluster Kubernetes
+- Entender melhores práticas de deployment e coleta de dados
+- Dominar Prometheus Operator e descoberta automática de métricas
+- Configurar ServiceMonitor e PodMonitor
+- Analisar logs com Loki e correlacionar com métricas
+
+### 📚 Teoria Abordada
+
+- Observabilidade em ambientes orquestrados vs. monitoramento tradicional
+- Prometheus Operator e gerenciamento declarativo
+- Service Discovery automático no Kubernetes
+- Labels e Selectors para organização
+- Agregação de logs em ambientes distribuídos
+- Boas práticas de deployment para produção
+
+---
+
+## Versões Recomendadas
+
+| Componente | Versão | Status |
+|------------|--------|--------|
+| **Kubernetes** | 1.34 (estável) ou 1.35 (mais recente) | ✅ Testado |
+| **EKS** | Suporta 1.31 a 1.35 | ✅ Compatível |
+| **kube-prometheus-stack** | 77.x+ | ✅ Recomendado |
+| **Loki** | 6.x+ | ✅ Recomendado |
+| **Promtail** | 6.x+ | ✅ Recomendado |
+
+💡 **Nota**: Este laboratório foi testado com Kubernetes 1.34. Versões mais recentes devem funcionar, mas podem requerer ajustes nos add-ons.
+
+---
+
+## Arquitetura
+
+### Componentes Principais
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    EKS CLUSTER (Auto Mode)                  │
+│                                                             │
+│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────┐ │
+│  │   MONITORING    │  │   APPLICATIONS  │  │   INGRESS   │ │
+│  │                 │  │                 │  │             │ │
+│  │ • Prometheus    │  │ • Demo Apps     │  │ • ALB       │ │
+│  │ • Grafana       │  │ • ServiceMon    │  │ • HTTPS     │ │
+│  │ • Loki          │  │ • PodMonitor    │  │ • DNS       │ │
+│  │ • Alertmanager  │  │                 │  │             │ │
+│  └─────────────────┘  └─────────────────┘  └─────────────┘ │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Stack de Observabilidade
+
 - **Prometheus Operator**: Gerenciamento declarativo de monitoramento
+- **Grafana**: Visualização unificada de métricas e logs
+- **Loki**: Agregação de logs otimizada para Kubernetes
+- **Promtail**: Coleta automática de logs de todos os pods
 - **ServiceMonitor/PodMonitor**: Descoberta automática de targets
-- **Infraestrutura como Código**: Terraform para reprodutibilidade
-- **Ambiente Multi-usuário**: Acesso controlado para estudantes
+- **Node Exporter**: Métricas dos nodes
+- **Kube State Metrics**: Métricas dos recursos Kubernetes
 
-## Estrutura do Projeto Aula 07
+### Novidades do EKS Auto Mode
 
-```
-├── README.md                           # Documentação principal
-├── ec2-userdata-eks-bastion.sh         # Script user data para instância bastion
-├── kubernetes/                         # Manifests Kubernetes
-│   ├── observability/                  # Stack de observabilidade
-│   │   ├── kube-prometheus-stack/      # Helm values
-│   │   ├── loki-stack/                 # Configuração Loki
-│   │   └── dashboards/                 # Dashboards Grafana
-│   ├── demo-apps/                      # Aplicações de demonstração
-│   │   ├── web-app/                    # App com ServiceMonitor
-│   │   ├── cronjob/                    # Job com PodMonitor
-│   │   └── monitoring/                 # Recursos de monitoramento
-│   └── rbac/                           # Controle de acesso
-├── scripts/                            # Scripts de automação
-│   ├── setup-environment.sh            # Setup completo do ambiente
-│   ├── create-demo-apps.sh             # Deploy das aplicações demo
-│   └── cleanup-environment.sh          # Limpeza do ambiente
-├── exercises/                          # Exercícios práticos
-│   ├── 01-deploy-prometheus-stack/     # Exercício 1
-│   ├── 02-create-servicemonitor/       # Exercício 2
-│   ├── 03-custom-dashboards/           # Exercício 3
-│   ├── 04-log-analysis-loki/           # Exercício 4
-│   └── 05-alerting-rules/              # Exercício 5
-└── docs/                               # Documentação
-    ├── setup-eks-lab.md                # Guia de setup do laboratório
-    ├── kubernetes-observability.md     # Guia de observabilidade K8s
-    ├── servicemonitor-guide.md         # Guia ServiceMonitor
-    ├── podmonitor-guide.md             # Guia PodMonitor
-    └── troubleshooting.md              # Guia de troubleshooting
-```
+- ✅ Gerenciamento automático de nodes
+- ✅ Escalonamento inteligente baseado em demanda
+- ✅ Atualizações automáticas de nodes e componentes
+- ✅ Storage gerenciado (EBS volumes)
+- ✅ Load Balancing integrado (ALB/NLB)
+- ✅ Suporte a GPU workloads (instâncias G, P, Trn)
 
-## Como usar - Aula 07
+---
 
-## Como usar - Aula 07
+## Início Rápido
 
 ### Pré-requisitos
-- Conta AWS com permissões para EKS, EC2, IAM
-- Cluster EKS criado manualmente (veja guia abaixo)
-- Key pair AWS criado
-- AWS CLI configurado localmente (opcional)
 
-### 1. Criar Cluster EKS Manualmente
+- ✅ Conta AWS com permissões administrativas
+- ✅ AWS CLI instalado e configurado → [Guia](docs/install-aws-cli.md)
+- ✅ kubectl instalado → [Guia](docs/install-kubectl.md)
+- ✅ Helm instalado → [Guia](docs/install-helm.md)
+- ✅ Lens Desktop (opcional, mas recomendado) → [Guia](docs/install-lens.md)
 
-#### Via Console AWS (Recomendado para aula)
-1. **EKS Console** → **Clusters** → **Create cluster**
-2. **Configurações básicas:**
-   - Name: `observability-lab-cluster`
-   - Kubernetes version: `1.28`
-   - Service role: Criar ou usar existente com políticas EKS
+### Setup em 5 Passos
 
-3. **Networking:**
-   - VPC: Default ou criar nova
-   - Subnets: Selecionar subnets públicas e privadas
-   - Security groups: Default ou criar específico
+#### 1️⃣ Criar Cluster EKS
 
-4. **Add-ons:** Manter padrões (CoreDNS, kube-proxy, VPC CNI)
-
-5. **Node groups:**
-   - Name: `worker-nodes`
-   - Instance types: `t3.medium`
-   - Capacity type: `Spot` (para economia)
-   - Scaling: Min 2, Max 6, Desired 3
-
-#### Via AWS CLI (Alternativo)
 ```bash
-# Criar cluster EKS
+# Via Console AWS (recomendado para iniciantes)
+# Seguir: docs/setup-eks-lab.md
+
+# Ou via AWS CLI
 aws eks create-cluster \
   --name observability-lab-cluster \
-  --version 1.28 \
+  --version 1.34 \
   --role-arn arn:aws:iam::ACCOUNT:role/eks-service-role \
   --resources-vpc-config subnetIds=subnet-xxx,subnet-yyy
-
-# Aguardar cluster ficar ativo
-aws eks wait cluster-active --name observability-lab-cluster
-
-# Criar node group
-aws eks create-nodegroup \
-  --cluster-name observability-lab-cluster \
-  --nodegroup-name worker-nodes \
-  --instance-types t3.medium \
-  --capacity-type SPOT \
-  --scaling-config minSize=2,maxSize=6,desiredSize=3 \
-  --node-role arn:aws:iam::ACCOUNT:role/NodeInstanceRole \
-  --subnets subnet-xxx subnet-yyy
 ```
 
-### 2. Criar Instância EC2 Bastion
+📖 **Guia Completo**: [docs/setup-eks-lab.md](docs/setup-eks-lab.md)
 
-#### Via Console AWS
-1. **EC2 Dashboard** → **Launch Instance**
-2. **Configurações básicas:**
-   - Name: `eks-bastion-observability-lab`
-   - AMI: Ubuntu Server 22.04 LTS
-   - Instance type: `t3.medium`
-   - Key pair: Selecione sua chave
+#### 2️⃣ Configurar Cluster
 
-3. **Network settings:**
-   - VPC: Mesma do cluster EKS
-   - Subnet: Pública
-   - Auto-assign public IP: Enable
-   - Security group: Criar novo com SSH (22) e HTTP (8080)
-
-4. **Advanced details:**
-   - IAM instance profile: Criar com políticas EKS (veja abaixo)
-   - User data: Cole o conteúdo do `ec2-userdata-eks-bastion.sh`
-
-#### Políticas IAM Necessárias
-Criar role IAM com as seguintes políticas:
-- `AmazonEKSClusterPolicy` (para acesso ao cluster)
-- `AmazonEKSWorkerNodePolicy` (para gerenciar nodes)
-- `AmazonSSMManagedInstanceCore` (para Session Manager)
-
-### 3. Acessar o Ambiente
 ```bash
-# Via SSH
-ssh -i sua-chave.pem ubuntu@BASTION_IP
+# Executar script de configuração automática
+./scripts/setup-eks.sh
 
-# Via Session Manager (recomendado)
-aws ssm start-session --target INSTANCE_ID
+# Ou com certificado ACM para HTTPS
+./scripts/setup-eks.sh --certificate-arn arn:aws:acm:...
 
-# Aguardar inicialização (5-10 minutos)
-sudo tail -f /var/log/user-data.log
+# Ou para ambiente de desenvolvimento (família T + Spot)
+./scripts/setup-eks.sh --env-dev
 ```
 
-### 4. Configurar Acesso ao EKS
+O script configura automaticamente:
+- ✅ Tags nas subnets para ALB
+- ✅ OIDC Provider
+- ✅ Buckets S3 para Loki
+- ✅ IAM Roles (IRSA)
+- ✅ IngressClass e StorageClass
+- ✅ Certificado ACM (se fornecido)
+
+📖 **Documentação**: [scripts/README.md](scripts/README.md)
+
+#### 3️⃣ Instalar Stack de Observabilidade
+
 ```bash
-# Na instância bastion
-./configure-eks-access.sh observability-lab-cluster us-east-2
+# Instalar kube-prometheus-stack
+helm upgrade --install kube-prometheus-stack prometheus-community/kube-prometheus-stack \
+  --namespace monitoring \
+  --create-namespace \
+  --values helm-values/kube-prometheus-stack/values.yaml
 
-# Verificar acesso
-kubectl get nodes
-kubectl get namespaces
+# Instalar Loki
+helm upgrade --install loki grafana/loki \
+  --namespace monitoring \
+  --values helm-values/loki-stack/values.yaml
 
-# Verificar pré-requisitos
-./check-prerequisites.sh
+# Instalar Promtail
+helm upgrade --install promtail grafana/promtail \
+  --namespace monitoring \
+  --values helm-values/loki-stack/promtail-values.yaml
 ```
 
-### 5. Deploy da Stack de Observabilidade
+📖 **Guia Completo**: [docs/deploy-observability-stack.md](docs/deploy-observability-stack.md)
+
+#### 4️⃣ Configurar DNS
+
 ```bash
-# Na instância bastion
-cd /home/ubuntu/lab-materials
+# Obter endereço do ALB
+kubectl get ingress -n monitoring eks-lab-ingress
 
-# Deploy da stack de observabilidade (seguir documentação)
-# Consultar: docs/deploy-observability-stack.md
-
-# Verificar deployment
-kubectl get pods -n monitoring
-kubectl get svc -n monitoring
+# Criar registros DNS (no seu provedor)
+# grafana.demo.lynxnetwork.com.br → CNAME → ALB_HOSTNAME
+# prometheus.demo.lynxnetwork.com.br → CNAME → ALB_HOSTNAME
 ```
 
-### 6. Acessar Interfaces de Monitoramento
-- **Grafana**: Obter URL do LoadBalancer
-  ```bash
-  kubectl get svc -n monitoring grafana
-  # Acessar via browser: http://EXTERNAL-IP:3000
-  # Credenciais: admin / admin123
-  ```
+#### 5️⃣ Acessar Interfaces
 
-### 7. Deploy das Aplicações Demo
-```bash
-# Deploy das aplicações de exemplo
-./scripts/create-demo-apps.sh
+- **Grafana**: https://grafana.demo.lynxnetwork.com.br
+  - Usuário: `admin`
+  - Senha: `admin123`
+- **Prometheus**: https://prometheus.demo.lynxnetwork.com.br
 
-# Verificar ServiceMonitor e PodMonitor
-kubectl get servicemonitor -n demo-apps
-kubectl get podmonitor -n demo-apps
+---
 
-# Verificar targets no Prometheus
-# Grafana > Explore > Prometheus > up
+## Guias Detalhados
+
+### 📖 Documentação Principal
+
+| Guia | Descrição |
+|------|-----------|
+| [Setup do Laboratório EKS](docs/setup-eks-lab.md) | Criação e configuração do cluster EKS com Auto Mode |
+| [Deploy da Stack de Observabilidade](docs/deploy-observability-stack.md) | Instalação completa de Prometheus, Grafana e Loki |
+| [Deploy OpenTelemetry Demo](docs/deploy-opentelemetry-demo.md) | Aplicação de teste com múltiplos microserviços |
+
+### 🛠️ Guias de Instalação
+
+| Ferramenta | Guia |
+|------------|------|
+| AWS CLI | [docs/install-aws-cli.md](docs/install-aws-cli.md) |
+| kubectl | [docs/install-kubectl.md](docs/install-kubectl.md) |
+| Helm | [docs/install-helm.md](docs/install-helm.md) |
+| Lens Desktop | [docs/install-lens.md](docs/install-lens.md) |
+
+### 🔧 Scripts de Automação
+
+| Script | Descrição |
+|--------|-----------|
+| [setup-eks.sh](scripts/README.md) | Configuração automática do cluster |
+| Documentação completa | [scripts/README.md](scripts/README.md) |
+
+### 📁 Configurações
+
+| Diretório | Descrição |
+|-----------|-----------|
+| [helm-values/](helm-values/) | Valores customizados para Helm charts |
+| [kubernetes/](kubernetes/README.md) | Manifests e templates Kubernetes |
+
+---
+
+## Estrutura do Projeto
+
+```
+.
+├── README.md                           # Este arquivo
+├── docs/                               # Documentação detalhada
+│   ├── setup-eks-lab.md                # Setup do cluster EKS
+│   ├── deploy-observability-stack.md   # Deploy da stack
+│   ├── deploy-opentelemetry-demo.md    # Deploy da demo app
+│   ├── install-aws-cli.md              # Instalação AWS CLI
+│   ├── install-kubectl.md              # Instalação kubectl
+│   ├── install-helm.md                 # Instalação Helm
+│   └── install-lens.md                 # Instalação Lens
+├── scripts/                            # Scripts de automação
+│   ├── README.md                       # Documentação dos scripts
+│   └── setup-eks.sh                    # Setup automático do cluster
+├── helm-values/                        # Valores Helm customizados
+│   ├── kube-prometheus-stack/          # Prometheus + Grafana
+│   ├── loki-stack/                     # Loki + Promtail
+│   └── opentelemetry-demo/             # Aplicação demo
+└── kubernetes/                         # Manifests Kubernetes
+    ├── README.md                       # Documentação dos manifests
+    ├── alb-ingressclass.yaml           # IngressClass para ALB
+    ├── eks-lab-ingress.yaml            # Ingress compartilhado
+    ├── gp3-storageclass.yaml           # StorageClass GP3
+    ├── loki-s3-policy.json             # Policy IAM para Loki
+    └── loki-trust-policy-template.json # Trust policy para IRSA
 ```
 
-### 8. Exercícios Práticos
+---
 
-#### Exercício 1: Deploy kube-prometheus-stack
-```bash
-cd exercises/01-deploy-prometheus-stack
-cat README.md
-# Seguir instruções do exercício
-```
-
-#### Exercício 2: Criar ServiceMonitor
-```bash
-cd exercises/02-create-servicemonitor
-cat README.md
-# Criar ServiceMonitor para nova aplicação
-```
-
-#### Exercício 3: Dashboards Customizados
-```bash
-cd exercises/03-custom-dashboards
-cat README.md
-# Criar dashboard personalizado no Grafana
-```
-
-#### Exercício 4: Análise de Logs com Loki
-```bash
-cd exercises/04-log-analysis-loki
-cat README.md
-# Consultas LogQL e correlação com métricas
-```
-
-#### Exercício 5: Regras de Alerta
-```bash
-cd exercises/05-alerting-rules
-cat README.md
-# Configurar alertas customizados
-```
-
-### 9. Limpeza do Ambiente
-```bash
-# Remover aplicações demo
-./scripts/cleanup-environment.sh
-
-# Destruir cluster EKS (quando não precisar mais)
-# Via Console AWS ou AWS CLI:
-aws eks delete-nodegroup --cluster-name observability-lab-cluster --nodegroup-name worker-nodes
-aws eks delete-cluster --name observability-lab-cluster
-
-# Terminar instância EC2 bastion
-# Via Console AWS ou AWS CLI
-```
-
-## Endpoints e Interfaces - Aula 07
-
-### Instância Bastion
-- **SSH**: `ssh -i key.pem ubuntu@BASTION_IP`
-- **Session Manager**: Via AWS Console ou AWS CLI
-- **Code-server**: `http://BASTION_IP:8080` (senha: demo123)
-
-### Cluster EKS
-- **Grafana**: `http://GRAFANA_LB_URL:3000` (admin/admin123)
-- **Prometheus**: Acessível via port-forward ou Grafana
-- **Loki**: Integrado no Grafana como data source
-
-### Aplicações Demo
-- **Web App**: Acessível via Ingress ou port-forward
-- **Metrics Endpoints**: `/metrics` em cada aplicação
-- **ServiceMonitor**: Descoberta automática pelo Prometheus
-
-## Comandos Úteis - Aula 07
+## Comandos Úteis
 
 ### Kubernetes
+
 ```bash
 # Verificar cluster
 kubectl cluster-info
@@ -288,170 +268,119 @@ kubectl get servicemonitor -A
 kubectl get podmonitor -A
 
 # Logs
-kubectl logs -n monitoring prometheus-kube-prometheus-prometheus-0
-kubectl logs -n monitoring grafana-xxx
+kubectl logs -n monitoring -l app.kubernetes.io/name=prometheus
+kubectl logs -n monitoring -l app.kubernetes.io/name=grafana
 
-# Port-forward para acesso local
-kubectl port-forward -n monitoring svc/grafana 3000:80
-kubectl port-forward -n monitoring svc/prometheus-kube-prometheus-prometheus 9090:9090
+# Port-forward (acesso local)
+kubectl port-forward -n monitoring svc/kube-prometheus-stack-grafana 3000:80
+kubectl port-forward -n monitoring svc/kube-prometheus-stack-prometheus 9090:9090
 ```
 
 ### Helm
+
 ```bash
 # Listar releases
 helm list -A
 
-# Status do kube-prometheus-stack
+# Status
 helm status kube-prometheus-stack -n monitoring
+helm status loki -n monitoring
 
-# Upgrade da stack
-helm upgrade kube-prometheus-stack prometheus-community/kube-prometheus-stack -n monitoring -f values.yaml
+# Upgrade
+helm upgrade kube-prometheus-stack prometheus-community/kube-prometheus-stack \
+  -n monitoring -f helm-values/kube-prometheus-stack/values.yaml
 ```
 
 ### Troubleshooting
+
 ```bash
-# Verificar eventos
+# Eventos
 kubectl get events -n monitoring --sort-by='.lastTimestamp'
 
-# Verificar recursos
+# Recursos
 kubectl top nodes
 kubectl top pods -n monitoring
 
-# Verificar configuração do Prometheus
-kubectl get prometheus -n monitoring -o yaml
+# Diagnóstico
+kubectl describe pod <pod-name> -n monitoring
+kubectl get ingress -n monitoring
 ```
-
-## Objetivos de Aprendizado - Aula 07
-
-### Conceitos Teóricos
-- **Observabilidade em Kubernetes**: Diferenças entre monitoramento tradicional e cloud-native
-- **Prometheus Operator**: Vantagens do gerenciamento declarativo
-- **Service Discovery**: Como o Kubernetes facilita a descoberta automática
-- **Labels e Selectors**: Importância para organização e filtragem
-- **Agregação de Logs**: Desafios e soluções em ambientes distribuídos
-
-### Habilidades Práticas
-- Deployar stack de observabilidade usando Helm
-- Criar e configurar ServiceMonitor e PodMonitor
-- Instrumentar aplicações para exposição de métricas
-- Criar dashboards customizados no Grafana
-- Escrever consultas LogQL para análise de logs
-- Configurar regras de alerta para Kubernetes
-- Troubleshooting de problemas de monitoramento
-
-### Melhores Práticas
-- Organização de recursos de monitoramento por namespace
-- Estratégias de labeling para métricas e logs
-- Configuração de retenção e storage para dados de monitoramento
-- Segurança e controle de acesso em ambientes de monitoramento
-- Otimização de performance para coleta de métricas em escala
 
 ---
 
-## Conteúdo Legado - Aula 05 (Docker Compose)
+## Limpeza do Ambiente
 
-### Arquitetura da Aula 05
-
-- **Instância 1**: Stack de Observabilidade Completa (t4g.medium - ARM64)
-  - Grafana (visualização unificada de métricas, logs e traces)
-  - Loki (armazenamento centralizado de logs)
-  - Prometheus (coleta de métricas)
-  - Jaeger (tracing distribuído completo)
-  - Promtail (coleta local de logs)
-
-- **Instância 2**: Aplicações Distribuídas Instrumentadas (t3.medium - AMD64)
-  - Frontend Service (Node.js/Express com OpenTelemetry)
-  - Backend API Service (Python/Flask com OpenTelemetry)
-  - PostgreSQL Database (armazenamento persistente)
-  - Redis Cache (cache de consultas)
-  - RabbitMQ (message queue)
-  - Jaeger Agent (coleta local de traces)
-  - Promtail (envio de logs para Loki)
-
-### 5. Configurações de Tracing Distribuído
-- Jaeger All-in-One (desenvolvimento) e componentes separados (produção)
-- Instrumentação Jaeger Client Libraries nativo para múltiplas linguagens
-- Sampling strategies para otimização de performance
-- Correlação entre traces, logs e métricas no Grafana
-- Context propagation entre serviços via HTTP headers
-
-### Como usar - Aula 05 (Legado)
-
-#### 1. Instância 1 (Observabilidade)
 ```bash
-# Clonar repositório
-git clone -b aula-05 https://github.com/Ed-Carlos-Marinho/PosTech-DevOps-e-Arquitetura-Cloud---Monitoramento-OpenSource.git
-cd PosTech-DevOps-e-Arquitetura-Cloud---Monitoramento-OpenSource
+# 1. Deletar releases Helm
+helm uninstall kube-prometheus-stack -n monitoring
+helm uninstall loki -n monitoring
+helm uninstall promtail -n monitoring
 
-# Iniciar stack de observabilidade
-docker-compose -f docker-compose-observability.yml up -d
+# 2. Deletar namespace
+kubectl delete namespace monitoring
 
-# Acessar interfaces
-# - Grafana: http://IP_INSTANCIA_1:3000 (admin/admin123)
-# - Prometheus: http://IP_INSTANCIA_1:9090
-# - Loki: http://IP_INSTANCIA_1:3100 (API)
-# - Jaeger UI: http://IP_INSTANCIA_1:16686
+# 3. Deletar cluster EKS
+aws eks delete-nodegroup --cluster-name observability-lab-cluster --nodegroup-name worker-nodes
+aws eks delete-cluster --name observability-lab-cluster
+
+# 4. Deletar recursos IAM (opcional)
+aws iam delete-role --role-name LokiS3AccessRole
+aws iam delete-policy --policy-arn arn:aws:iam::ACCOUNT:policy/LokiS3AccessPolicy
+
+# 5. Deletar buckets S3 (opcional)
+aws s3 rb s3://loki-observability-lab-chunks-ACCOUNT_ID --force
+aws s3 rb s3://loki-observability-lab-ruler-ACCOUNT_ID --force
+aws s3 rb s3://loki-observability-lab-admin-ACCOUNT_ID --force
 ```
 
-#### 2. Instância 2 (Aplicações Distribuídas)
-```bash
-# Clonar repositório
-git clone -b aula-05 https://github.com/Ed-Carlos-Marinho/PosTech-DevOps-e-Arquitetura-Cloud---Monitoramento-OpenSource.git
-cd PosTech-DevOps-e-Arquitetura-Cloud---Monitoramento-OpenSource/distributed-app
+---
 
-# Configurar IP do Jaeger Collector
-sed -i 's/JAEGER_COLLECTOR_IP/IP_PRIVADO_INSTANCIA_1/' jaeger-agent-config.yml
+## Custos Estimados
 
-# Iniciar stack de aplicações distribuídas
-docker-compose -f docker-compose-app.yml up -d
+| Recurso | Configuração | Custo/hora (aprox.) |
+|---------|--------------|-------------------|
+| EKS Control Plane | Managed | $0.10 |
+| Worker Nodes | 3x t3.medium spot | $0.14 |
+| EBS Volumes | ~40GB gp3 | $0.01 |
+| S3 (Loki) | Pay-as-you-go | Variável |
+| ALB | 1 ALB | $0.02 |
+| **Total Base** | | **~$0.27/hora** |
 
-# Testar aplicações e gerar traces
-curl http://localhost/api/users
-curl http://localhost/api/orders
-curl http://localhost/api/products
-```
+💡 **Dicas de Economia**:
+- Use instâncias Spot (já configurado por padrão)
+- Delete o cluster quando não estiver usando
+- Configure lifecycle policies nos buckets S3
+- Use `--env-dev` para restringir a família T
 
-#### 3. Configurar Data Sources no Grafana
-1. **Loki**: `http://loki:3100`
-2. **Prometheus**: `http://prometheus:9090`
-3. **Jaeger**: `http://jaeger-query:16686`
+---
 
-#### 4. Consultas básicas para correlação
+## Suporte e Contribuições
 
-##### Traces no Jaeger
-- Service: `frontend-service`
-- Operation: `GET /api/users`
-- Tags: `http.status_code=200`
+### Problemas Conhecidos
 
-##### Logs correlacionados no Loki
-```logql
-{job="frontend"} |= "trace_id"
-{job="backend"} |= "span_id"
-```
+Consulte a documentação específica de cada componente para troubleshooting detalhado.
 
-##### Métricas correlacionadas no Prometheus
-```promql
-http_requests_total{service="frontend"}
-http_request_duration_seconds{service="backend"}
-```
+### Reportar Problemas
 
-## Teoria Abordada
+Se encontrar problemas:
+1. Verifique se está usando as versões recomendadas
+2. Consulte os logs: `kubectl logs -n monitoring <pod-name>`
+3. Verifique eventos: `kubectl get events -n monitoring`
+4. Abra uma issue no repositório com detalhes
 
-### Aula 07 - Kubernetes
-- **Conceitos de observabilidade em ambientes orquestrados**: Importância do monitoramento nativo em Kubernetes
-- **Prometheus Operator**: Gerenciamento declarativo de recursos de monitoramento
-- **ServiceMonitor e PodMonitor**: Descoberta automática de targets de métricas
-- **Coleta de métricas de aplicações, pods e nodes**: Estratégias de instrumentação em Kubernetes
-- **Integração com Grafana e Loki**: Observabilidade unificada em ambientes cloud-native
-- **Boas práticas de deployment**: Padrões para observabilidade em produção
+---
 
-### Aula 05 - Docker Compose (Legado)
-- **Conceitos de tracing distribuído**: Importância do rastreamento em arquiteturas de microserviços
-- **Spans, traces e contexto de requisição**: Estrutura fundamental do tracing distribuído
-- **Sampling e instrumentação de serviços**: Estratégias para coleta eficiente de traces
-- **Arquitetura Jaeger**: Componentes (collector, agent, query e UI) e suas funções
-- **Diagnóstico de latência e gargalos**: Identificação e resolução de problemas de performance
-- **Correlação com logs e métricas**: Observabilidade completa com os três pilares
-- **Jaeger Client Libraries**: Instrumentação nativa para controle total sobre tracing
-- **Estratégias de sampling**: Balanceamento entre visibilidade e overhead
-- **Context propagation**: Propagação de contexto entre serviços distribuídos
+## Licença
+
+Este material é parte do curso PosTech DevOps e Arquitetura Cloud.
+
+## Autores
+
+- **Instrutor**: Ed Carlos Marinho
+- **Instituição**: PosTech
+
+---
+
+**Última atualização**: Fevereiro 2026  
+**Versão do Kubernetes**: 1.34  
+**Versão do documento**: 2.0
