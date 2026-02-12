@@ -1,0 +1,199 @@
+# =============================================================================
+# JAEGER VALUES - PRODUCTION DEPLOYMENT
+# =============================================================================
+# Aula 08 - PosTech DevOps - Distributed Tracing com Jaeger
+# Chart oficial: jaegertracing/jaeger (em beta mas usado em produção)
+#
+# Versões testadas:
+# - Helm Chart: 4.x+ (jaegertracing/jaeger)
+# - Jaeger: 2.14.1
+# - Kubernetes: 1.34
+#
+# NOTA: O chart está em beta, mas é a forma oficial recomendada
+# Para ambientes críticos, considere usar o Jaeger Operator
+#
+# Instalação:
+# helm repo add jaegertracing https://jaegertracing.github.io/helm-charts
+# helm repo update
+# helm upgrade --install jaeger jaegertracing/jaeger \
+#   --namespace monitoring \
+#   --values helm-values/jaeger/values.yaml
+# =============================================================================
+
+# =============================================================================
+# ALL-IN-ONE MODE (Desabilitar para modo distribuído)
+# =============================================================================
+allInOne:
+  enabled: false
+
+# =============================================================================
+# PROVISIONAMENTO
+# =============================================================================
+provisionDataStore:
+  cassandra: false
+  elasticsearch: false
+
+# =============================================================================
+# STORAGE CONFIGURATION
+# =============================================================================
+# Usar storage in-memory para ambiente de laboratório
+# Para produção, considere usar Elasticsearch ou Cassandra
+storage:
+  type: memory
+  memory:
+    max_traces: 100000
+
+# =============================================================================
+# JAEGER AGENT (Deprecated - usar OTLP direto no Collector)
+# =============================================================================
+agent:
+  enabled: false
+
+# =============================================================================
+# JAEGER COLLECTOR - DISTRIBUÍDO
+# =============================================================================
+# Múltiplas réplicas para alta disponibilidade e escalabilidade
+collector:
+  enabled: true
+  
+  # Múltiplas réplicas para distribuir carga
+  replicaCount: 3
+  
+  service:
+    type: ClusterIP
+    # Porta OTLP gRPC (padrão OpenTelemetry)
+    otlp:
+      grpc:
+        port: 4317
+      http:
+        port: 4318
+    # Portas Jaeger nativas (legacy)
+    grpc:
+      port: 14250
+    http:
+      port: 14268
+    zipkin:
+      port: 9411
+  
+  resources:
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+    requests:
+      cpu: 200m
+      memory: 256Mi
+  
+  # Autoscaling horizontal
+  autoscaling:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 80
+    targetMemoryUtilizationPercentage: 80
+  
+  # Pod Disruption Budget para alta disponibilidade
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 2
+  
+  # Anti-affinity para distribuir pods em nodes diferentes
+  affinity:
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            labelSelector:
+              matchExpressions:
+                - key: app.kubernetes.io/component
+                  operator: In
+                  values:
+                    - collector
+            topologyKey: kubernetes.io/hostname
+  
+  # ServiceMonitor para Prometheus
+  serviceMonitor:
+    enabled: true
+    additionalLabels:
+      release: kube-prometheus-stack
+
+# =============================================================================
+# JAEGER QUERY (UI) - DISTRIBUÍDO
+# =============================================================================
+# Múltiplas réplicas para alta disponibilidade
+query:
+  enabled: true
+  
+  # Múltiplas réplicas para distribuir carga de queries
+  replicaCount: 2
+  
+  service:
+    type: ClusterIP
+    port: 16686
+  
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+  
+  # Autoscaling horizontal
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 5
+    targetCPUUtilizationPercentage: 80
+    targetMemoryUtilizationPercentage: 80
+  
+  # Pod Disruption Budget
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1
+  
+  # Anti-affinity
+  affinity:
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            labelSelector:
+              matchExpressions:
+                - key: app.kubernetes.io/component
+                  operator: In
+                  values:
+                    - query
+            topologyKey: kubernetes.io/hostname
+  
+  # ServiceMonitor para Prometheus
+  serviceMonitor:
+    enabled: true
+    additionalLabels:
+      release: kube-prometheus-stack
+  
+  # Configurações da UI
+  basePath: /
+
+# =============================================================================
+# JAEGER INGESTER (Usado com Kafka - desabilitado)
+# =============================================================================
+ingester:
+  enabled: false
+
+# =============================================================================
+# SPARK DEPENDENCIES (Análise de dependências - desabilitado)
+# =============================================================================
+spark:
+  enabled: false
+
+# =============================================================================
+# ELASTICSEARCH (Desabilitado - usando memory storage)
+# =============================================================================
+elasticsearch:
+  enabled: false
+
+# =============================================================================
+# KAFKA (Desabilitado)
+# =============================================================================
+kafka:
+  enabled: false
