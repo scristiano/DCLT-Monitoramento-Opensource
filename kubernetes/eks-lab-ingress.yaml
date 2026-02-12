@@ -72,7 +72,7 @@ spec:
         pathType: Prefix
         backend:
           service:
-            name: jaeger-query
+            name: jaeger
             port:
               number: 16686
 

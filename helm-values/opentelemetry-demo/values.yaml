@@ -54,7 +54,7 @@ opentelemetry-collector:
       
       # Exportar traces para Jaeger
       otlp:
-        endpoint: jaeger-collector.monitoring.svc.cluster.local:4317
+        endpoint: jaeger.monitoring.svc.cluster.local:4317
         tls:
           insecure: true
       
