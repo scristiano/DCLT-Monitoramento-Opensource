@@ -465,24 +465,30 @@ echo -e "${YELLOW}📝 Atualizando nomes dos buckets no values.yaml...${NC}"
 
 if [[ "$OSTYPE" == "darwin"* ]]; then
     # macOS
-    sed -i '' "s|chunks: loki-observability-lab-chunks-[0-9]*|chunks: loki-observability-lab-chunks-${ACCOUNT_ID}|" helm-values/loki-stack/values.yaml
+    sed -i '' "s|chunks: loki-observability-lab-chunks-[0-9]*ACCOUNT_ID|chunks: loki-observability-lab-chunks-${ACCOUNT_ID}|" helm-values/loki-stack/values.yaml
     sed -i '' "s|chunks: loki-observability-lab-chunks-ACCOUNT_ID|chunks: loki-observability-lab-chunks-${ACCOUNT_ID}|" helm-values/loki-stack/values.yaml
+    sed -i '' "s|chunks: loki-observability-lab-chunks-[0-9]\{12\}|chunks: loki-observability-lab-chunks-${ACCOUNT_ID}|" helm-values/loki-stack/values.yaml
     
-    sed -i '' "s|ruler: loki-observability-lab-ruler-[0-9]*|ruler: loki-observability-lab-ruler-${ACCOUNT_ID}|" helm-values/loki-stack/values.yaml
+    sed -i '' "s|ruler: loki-observability-lab-ruler-[0-9]*ACCOUNT_ID|ruler: loki-observability-lab-ruler-${ACCOUNT_ID}|" helm-values/loki-stack/values.yaml
     sed -i '' "s|ruler: loki-observability-lab-ruler-ACCOUNT_ID|ruler: loki-observability-lab-ruler-${ACCOUNT_ID}|" helm-values/loki-stack/values.yaml
+    sed -i '' "s|ruler: loki-observability-lab-ruler-[0-9]\{12\}|ruler: loki-observability-lab-ruler-${ACCOUNT_ID}|" helm-values/loki-stack/values.yaml
     
-    sed -i '' "s|admin: loki-observability-lab-admin-[0-9]*|admin: loki-observability-lab-admin-${ACCOUNT_ID}|" helm-values/loki-stack/values.yaml
+    sed -i '' "s|admin: loki-observability-lab-admin-[0-9]*ACCOUNT_ID|admin: loki-observability-lab-admin-${ACCOUNT_ID}|" helm-values/loki-stack/values.yaml
     sed -i '' "s|admin: loki-observability-lab-admin-ACCOUNT_ID|admin: loki-observability-lab-admin-${ACCOUNT_ID}|" helm-values/loki-stack/values.yaml
+    sed -i '' "s|admin: loki-observability-lab-admin-[0-9]\{12\}|admin: loki-observability-lab-admin-${ACCOUNT_ID}|" helm-values/loki-stack/values.yaml
 else
     # Linux
-    sed -i "s|chunks: loki-observability-lab-chunks-[0-9]*|chunks: loki-observability-lab-chunks-${ACCOUNT_ID}|" helm-values/loki-stack/values.yaml
+    sed -i "s|chunks: loki-observability-lab-chunks-[0-9]*ACCOUNT_ID|chunks: loki-observability-lab-chunks-${ACCOUNT_ID}|" helm-values/loki-stack/values.yaml
     sed -i "s|chunks: loki-observability-lab-chunks-ACCOUNT_ID|chunks: loki-observability-lab-chunks-${ACCOUNT_ID}|" helm-values/loki-stack/values.yaml
+    sed -i "s|chunks: loki-observability-lab-chunks-[0-9]\{12\}|chunks: loki-observability-lab-chunks-${ACCOUNT_ID}|" helm-values/loki-stack/values.yaml
     
-    sed -i "s|ruler: loki-observability-lab-ruler-[0-9]*|ruler: loki-observability-lab-ruler-${ACCOUNT_ID}|" helm-values/loki-stack/values.yaml
+    sed -i "s|ruler: loki-observability-lab-ruler-[0-9]*ACCOUNT_ID|ruler: loki-observability-lab-ruler-${ACCOUNT_ID}|" helm-values/loki-stack/values.yaml
     sed -i "s|ruler: loki-observability-lab-ruler-ACCOUNT_ID|ruler: loki-observability-lab-ruler-${ACCOUNT_ID}|" helm-values/loki-stack/values.yaml
+    sed -i "s|ruler: loki-observability-lab-ruler-[0-9]\{12\}|ruler: loki-observability-lab-ruler-${ACCOUNT_ID}|" helm-values/loki-stack/values.yaml
     
-    sed -i "s|admin: loki-observability-lab-admin-[0-9]*|admin: loki-observability-lab-admin-${ACCOUNT_ID}|" helm-values/loki-stack/values.yaml
+    sed -i "s|admin: loki-observability-lab-admin-[0-9]*ACCOUNT_ID|admin: loki-observability-lab-admin-${ACCOUNT_ID}|" helm-values/loki-stack/values.yaml
     sed -i "s|admin: loki-observability-lab-admin-ACCOUNT_ID|admin: loki-observability-lab-admin-${ACCOUNT_ID}|" helm-values/loki-stack/values.yaml
+    sed -i "s|admin: loki-observability-lab-admin-[0-9]\{12\}|admin: loki-observability-lab-admin-${ACCOUNT_ID}|" helm-values/loki-stack/values.yaml
 fi
 echo -e "${GREEN}✅ Nomes dos buckets atualizados no values.yaml${NC}"
 
@@ -505,6 +511,27 @@ echo ""
 echo -e "${BLUE}ℹ️  Verificar configuração:${NC}"
 echo -e "   ${YELLOW}grep -A 3 'bucketNames:' helm-values/loki-stack/values.yaml${NC}"
 echo -e "   ${YELLOW}grep 'eks.amazonaws.com/role-arn' helm-values/loki-stack/values.yaml${NC}"
+echo ""
+
+# =============================================================================
+# ATUALIZAR CERTIFICADO ACM NO OPENTELEMETRY DEMO
+# =============================================================================
+if [ "$ACM_CERTIFICATE_ARN" != "NONE" ]; then
+    echo -e "${YELLOW}📝 Atualizando certificado ACM no OpenTelemetry Demo values.yaml...${NC}"
+    
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        # macOS
+        sed -i '' "s|alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:.*|alb.ingress.kubernetes.io/certificate-arn: ${ACM_CERTIFICATE_ARN}|" helm-values/opentelemetry-demo/values.yaml
+    else
+        # Linux
+        sed -i "s|alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:.*|alb.ingress.kubernetes.io/certificate-arn: ${ACM_CERTIFICATE_ARN}|" helm-values/opentelemetry-demo/values.yaml
+    fi
+    
+    echo -e "${GREEN}✅ Certificado ACM atualizado no OpenTelemetry Demo values.yaml${NC}"
+else
+    echo -e "${YELLOW}⚠️  Certificado ACM não configurado - OpenTelemetry Demo usará HTTP apenas${NC}"
+    echo -e "${BLUE}ℹ️  Para configurar HTTPS depois, edite: helm-values/opentelemetry-demo/values.yaml${NC}"
+fi
 echo ""
 
 # Obter VPC ID do cluster
@@ -691,16 +718,12 @@ else
         echo ""
         echo -e "${YELLOW}📋 Ingress criado:${NC}"
         kubectl get ingress -n monitoring eks-lab-ingress 2>/dev/null || echo "Ingress não encontrado"
-            echo ""
-            echo -e "${BLUE}ℹ️  O ALB será criado automaticamente pelo Auto Mode${NC}"
-            echo -e "   Nome do ALB: ${YELLOW}eks-lab-alb${NC}"
-            echo ""
-            echo -e "${BLUE}ℹ️  Ao instalar o kube-prometheus-stack, os Ingress de Grafana e Prometheus${NC}"
-            echo -e "   serão criados automaticamente e usarão este ALB compartilhado.${NC}"
-        else
-            echo -e "${YELLOW}⚠️  Não foi possível aplicar Ingress base${NC}"
-            echo -e "Execute manualmente: ${YELLOW}kubectl apply -f kubernetes/eks-lab-ingress.yaml${NC}"
-        fi
+        echo ""
+        echo -e "${BLUE}ℹ️  O ALB será criado automaticamente pelo Auto Mode${NC}"
+        echo -e "   Nome do ALB: ${YELLOW}eks-lab-alb${NC}"
+        echo ""
+        echo -e "${BLUE}ℹ️  Ao instalar o kube-prometheus-stack, os Ingress de Grafana e Prometheus${NC}"
+        echo -e "   serão criados automaticamente e usarão este ALB compartilhado.${NC}"
     fi
 fi
 
@@ -774,6 +797,7 @@ echo -e "  ✅ Namespace monitoring"
 echo -e "  ✅ Ingress base (eks-lab-alb)"
 if [ "$ACM_CERTIFICATE_ARN" != "NONE" ]; then
     echo -e "  ✅ Certificado ACM configurado (HTTPS)"
+    echo -e "  ✅ OpenTelemetry Demo values.yaml atualizado com certificado"
 else
     echo -e "  ⚠️  Certificado ACM não configurado (HTTP apenas)"
 fi

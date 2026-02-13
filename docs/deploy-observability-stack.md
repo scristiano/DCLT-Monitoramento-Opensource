@@ -2,163 +2,105 @@
 
 Guia completo para implementar a stack de observabilidade no Kubernetes usando Helm com SSL/TLS automático via Let's Encrypt.
 
+## Índice
+
+- [Arquitetura da Stack](#arquitetura-da-stack)
+- [Passo 1: Instalar kube-prometheus-stack](#passo-1-instalar-kube-prometheus-stack)
+- [Passo 2: Verificar Ingress e ALB](#passo-2-verificar-ingress-e-alb)
+- [Passo 3: Instalar Loki Stack (SimpleScalable Mode)](#passo-3-instalar-loki-stack-simplescalable-mode)
+  - [3.1 Configurar S3 e Permissões IAM](#31-configurar-s3-e-permissões-iam)
+  - [3.2 Instalar Loki](#32-instalar-loki)
+  - [3.3 Instalar Promtail](#33-instalar-promtail)
+  - [3.4 Verificar Integração com Grafana](#34-verificar-integração-com-grafana)
+- [Passo 4: Configurar DNS](#passo-4-configurar-dns)
+- [Verificação da Instalação](#verificação-da-instalação)
+  - [1. Verificar Todos os Pods](#1-verificar-todos-os-pods)
+  - [2. Verificar Certificados SSL](#2-verificar-certificados-ssl)
+  - [3. Verificar ServiceMonitors](#3-verificar-servicemonitors)
+- [Acessar as Interfaces](#acessar-as-interfaces)
+  - [1. Grafana (HTTPS com SSL)](#1-grafana-https-com-ssl)
+  - [2. Prometheus (HTTPS com SSL)](#2-prometheus-https-com-ssl)
+- [Testar a Stack de Observabilidade](#testar-a-stack-de-observabilidade)
+  - [1. Verificar Métricas](#1-verificar-métricas)
+  - [2. Verificar Logs](#2-verificar-logs)
+  - [3. Verificar SSL/TLS](#3-verificar-ssltls)
+
 ## Arquitetura da Stack
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                    EKS CLUSTER                                  │
+│                    EKS CLUSTER (AUTO MODE)                      │
 │                                                                 │
 │  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐ │
-│  │   MONITORING    │  │   CERT-MANAGER  │  │   INGRESS-NGINX │ │
-│  │   NAMESPACE     │  │   NAMESPACE     │  │   NAMESPACE     │ │
+│  │   MONITORING    │  │       APP       │  │   AWS MANAGED   │ │
+│  │   NAMESPACE     │  │   NAMESPACE     │  │   SERVICES      │ │
 │  │                 │  │                 │  │                 │ │
-│  │ • Prometheus    │  │ • cert-manager  │  │ • Ingress       │ │
-│  │ • Grafana       │  │ • ClusterIssuer │  │   Controller    │ │
-│  │ • Node Exporter │  │ • Let's Encrypt │  │ • NLB           │ │
-│  │ • Loki          │  │                 │  │                 │ │
-│  │ • Promtail      │  │                 │  │                 │ │
+│  │ • Prometheus    │  │ • OpenTelemetry │  │ • ALB           │ │
+│  │ • Grafana       │  │   Demo          │  │   Controller    │ │
+│  │ • Node Exporter │  │ • Jaeger        │  │ • EBS CSI       │ │
+│  │ • Loki          │  │ • Microservices │  │ • Auto Scaling  │ │
+│  │ • Promtail      │  │                 │  │ • ACM Certs     │ │
 │  └─────────────────┘  └─────────────────┘  └─────────────────┘ │
 │                                                                 │
+│  ┌─────────────────────────────────────────────────────────┐   │
+│  │              APPLICATION LOAD BALANCER (ALB)            │   │
+│  │  • HTTPS (443) com certificado ACM                      │   │
+│  │  • HTTP (80) com redirect para HTTPS                    │   │
+│  │  • Roteamento por hostname                              │   │
+│  └─────────────────────────────────────────────────────────┘   │
+│                                                                 │
 └─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+                    ┌─────────────────┐
+                    │   AMAZON S3     │
+                    │                 │
+                    │ • Loki Chunks   │
+                    │ • Loki Ruler    │
+                    │ • Loki Admin    │
+                    └─────────────────┘
 ```
 
-## Pré-requisitos
+## Passo 1: Instalar kube-prometheus-stack
 
-### 1. Cluster EKS Criado
+Esta é a peça central da observabilidade, incluindo Prometheus, Grafana.
+
 ```bash
-# Executar script de criação do cluster
-./scripts/create-eks-cluster.sh
-
-# Verificar se o cluster está funcionando
-kubectl get nodes
-kubectl cluster-info
-
-# Verificar add-ons AWS
-aws eks list-addons --cluster-name observability-lab-cluster
-```
-
-### 2. Helm Instalado
-```bash
-# Verificar versão do Helm
-helm version
-
-# Se não estiver instalado
-curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
-```
-
-### 3. Repositórios Helm Necessários
-```bash
-# Adicionar repositórios
+# Adicionar repositório Helm
 helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
-helm repo add grafana https://grafana.github.io/helm-charts
-helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
-helm repo add jetstack https://charts.jetstack.io
-
-# Atualizar repositórios
 helm repo update
 
-# Verificar repositórios
-helm repo list
-```
-
-## Passo 1: Instalar Ingress NGINX Controller
-
-O Ingress Controller permite expor serviços HTTP/HTTPS com roteamento avançado e Load Balancer da AWS.
-
-```bash
-# Instalar Ingress NGINX
-helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx \
-  --namespace ingress-nginx \
-  --create-namespace \
-  --values helm-values/ingress-nginx/values.yaml \
-  --wait \
-  --timeout 10m
-
-# Verificar instalação
-kubectl get pods -n ingress-nginx
-
-# Verificar LoadBalancer (aguardar External IP)
-kubectl get svc -n ingress-nginx ingress-nginx-controller -w
-```
-
-**Configurações importantes:**
-- **Service Type**: LoadBalancer com Network Load Balancer (NLB) da AWS
-- **Métricas**: Habilitadas para Prometheus
-- **Logs**: Formato JSON estruturado para observabilidade
-- **Recursos**: Otimizados (CPU: 100m-200m, Memory: 90Mi-256Mi)
-- **Réplicas**: 2 para alta disponibilidade
-
-## Passo 2: Instalar cert-manager
-
-O cert-manager automatiza a criação e renovação de certificados SSL/TLS via Let's Encrypt.
-
-```bash
-# Instalar cert-manager
-helm upgrade --install cert-manager jetstack/cert-manager \
-  --namespace cert-manager \
-  --create-namespace \
-  --values helm-values/cert-manager/values.yaml \
-  --wait \
-  --timeout 10m
-
-# Verificar instalação
-kubectl get pods -n cert-manager
-
-# Aplicar ClusterIssuers
-kubectl apply -f helm-values/cert-manager/cluster-issuer.yaml
-
-# Verificar ClusterIssuers
-kubectl get clusterissuer
-```
-
-**Componentes instalados:**
-- **cert-manager**: Controller principal
-- **cert-manager-webhook**: Validação de recursos
-- **cert-manager-cainjector**: Injeção de CA
-- **ClusterIssuer**: Configuração para Let's Encrypt (prod e staging)
-
-## Passo 3: Instalar kube-prometheus-stack
-
-Esta é a peça central da observabilidade, incluindo Prometheus, Grafana com SSL automático.
-
-```bash
 # Instalar kube-prometheus-stack
 helm upgrade --install kube-prometheus-stack prometheus-community/kube-prometheus-stack \
   --namespace monitoring \
   --create-namespace \
-  --values helm-values/kube-prometheus-stack/values.yaml \
-  --wait \
-  --timeout 15m
+  --values helm-values/kube-prometheus-stack/values.yaml
 
 # Verificar instalação
 kubectl get pods -n monitoring
 
-# Verificar Ingresses e certificados
+# Verificar Ingresses
 kubectl get ingress -n monitoring
-kubectl get certificates -n monitoring
 ```
 
 **Componentes instalados:**
 - **Prometheus**: Coleta de métricas com retenção de 7 dias
-- **Grafana**: Interface de visualização com SSL (admin/admin123)
+- **Grafana**: Interface de visualização (admin/admin123)
 - **Node Exporter**: Métricas dos nodes (DaemonSet)
 - **Kube State Metrics**: Métricas dos recursos Kubernetes
 - **Prometheus Operator**: Gerenciamento declarativo
 
 **Configurações importantes:**
-- **Ingress**: Desabilitado (será criado via Ingress centralizado)
+- **Ingress**: Será criado automaticamente pelo ALB Controller
 - **Domínios**: grafana.demo.lynxnetwork.com.br e prometheus.demo.lynxnetwork.com.br
 - **Storage**: Volumes persistentes (Prometheus: 20GB, Grafana: 10GB)
 - **Datasource Loki**: Pré-configurado para integração
 
-## Passo 4: Criar Ingress Centralizado com ALB
+## Passo 2: Verificar Ingress e ALB
 
-Após instalar o kube-prometheus-stack, crie o Ingress centralizado que expõe Grafana e Prometheus através de um único ALB.
+Após instalar o kube-prometheus-stack, o Ingress será criado automaticamente e o ALB Controller provisionará o Application Load Balancer.
 
 ```bash
-# Aplicar Ingress centralizado
-kubectl apply -f kubernetes/eks-lab-ingress.yaml
-
 # Verificar Ingress criado
 kubectl get ingress -n monitoring
 
@@ -167,7 +109,7 @@ kubectl get ingress -n monitoring eks-lab-ingress -w
 ```
 
 **O que o Ingress faz:**
-- Cria um único ALB chamado `eks-lab-alb`
+- Usa o ALB compartilhado `eks-lab-alb` (criado pelo script setup-eks.sh)
 - Configura HTTPS com certificado ACM
 - Redireciona HTTP para HTTPS automaticamente
 - Roteia tráfego baseado em hostname:
@@ -183,11 +125,11 @@ kubectl get ingress -n monitoring eks-lab-ingress -o jsonpath='{.status.loadBala
 # EC2 → Load Balancers → Procurar por "eks-lab-alb"
 ```
 
-## Passo 5: Instalar Loki Stack (SimpleScalable Mode)
+## Passo 3: Instalar Loki Stack (SimpleScalable Mode)
 
 Loki fornece agregação de logs escalável para Kubernetes usando storage S3.
 
-### 5.1 Configurar S3 e Permissões IAM
+### 3.1 Configurar S3 e Permissões IAM
 
 Antes de instalar o Loki, é necessário criar buckets S3 e configurar permissões IAM.
 
@@ -439,15 +381,17 @@ serviceAccount:
 
 **Nota:** Substitua `SEU_ACCOUNT_ID` pelo seu Account ID real. O script faz isso automaticamente.
 
-### 5.2 Instalar Loki
+### 3.2 Instalar Loki
 
 ```bash
+# Adicionar repositório Helm do Grafana
+helm repo add grafana https://grafana.github.io/helm-charts
+helm repo update
+
 # Instalar Loki em modo SimpleScalable
 helm upgrade --install loki grafana/loki \
   --namespace monitoring \
-  --values helm-values/loki-stack/values.yaml \
-  --wait \
-  --timeout 10m
+  --values helm-values/loki-stack/values.yaml
 
 # Verificar instalação
 kubectl get pods -n monitoring -l app.kubernetes.io/name=loki
@@ -461,15 +405,13 @@ kubectl get pods -n monitoring | grep loki
 - **Loki Write** (2 réplicas): Componente de ingestão/escrita
 - **Loki Gateway** (1 réplica): Gateway HTTP para roteamento
 
-### 5.3 Instalar Promtail
+### 3.3 Instalar Promtail
 
 ```bash
 # Instalar Promtail (agente de coleta de logs)
 helm upgrade --install promtail grafana/promtail \
   --namespace monitoring \
-  --values helm-values/loki-stack/promtail-values.yaml \
-  --wait \
-  --timeout 10m
+  --values helm-values/loki-stack/promtail-values.yaml
 
 # Verificar instalação (deve ter 1 pod por node)
 kubectl get pods -n monitoring -l app.kubernetes.io/name=promtail -o wide
@@ -494,7 +436,7 @@ kubectl logs -n monitoring -l app.kubernetes.io/name=promtail --tail=50
 - **Coleta automática**: Logs de todos os pods Kubernetes via Promtail (DaemonSet)
 - **Integração**: Datasource pré-configurado no Grafana
 
-### 5.4 Verificar Integração com Grafana
+### 3.4 Verificar Integração com Grafana
 
 ```bash
 # Verificar se o datasource Loki está configurado no Grafana
@@ -521,7 +463,7 @@ kubectl exec -n monitoring deployment/kube-prometheus-stack-grafana -- \
 - **Dados permanentes**: Ficam no S3 (buckets configurados)
 - **Volumes EBS**: Apenas para dados temporários e cache
 
-## Passo 6: Configurar DNS
+## Passo 4: Configurar DNS
 
 Para acessar via domínios personalizados, configure os registros DNS:
 

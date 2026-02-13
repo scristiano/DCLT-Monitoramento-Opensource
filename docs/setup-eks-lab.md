@@ -2,6 +2,39 @@
 
 Guia completo para configurar o ambiente de laboratório da Aula 07, incluindo criação do cluster EKS com Auto Mode e instância EC2 bastion.
 
+## Índice
+
+- [O que é EKS Auto Mode?](#o-que-é-eks-auto-mode)
+  - [Versões Suportadas](#versões-suportadas)
+  - [Vantagens do Auto Mode](#vantagens-do-auto-mode)
+- [Arquitetura do Laboratório](#arquitetura-do-laboratório)
+- [Pré-requisitos](#pré-requisitos)
+- [Passo 1: Criar IAM Roles Necessárias](#passo-1-criar-iam-roles-necessárias)
+  - [1.1 Role para EKS Auto Mode Cluster](#11-role-para-eks-auto-mode-cluster)
+  - [1.2 Role para EKS Auto Mode Nodes](#12-role-para-eks-auto-mode-nodes)
+- [Passo 2: Criar Cluster EKS com Auto Mode](#passo-2-criar-cluster-eks-com-auto-mode)
+  - [2.1 Via Console AWS (Recomendado)](#21-via-console-aws-recomendado)
+  - [2.2 Via AWS CLI (Alternativo)](#22-via-aws-cli-alternativo)
+- [Passo 3: Verificar Node Pools do Auto Mode](#passo-3-verificar-node-pools-do-auto-mode)
+  - [3.1 Verificar Node Pools](#31-verificar-node-pools)
+  - [3.2 Como Funciona o Auto Mode](#32-como-funciona-o-auto-mode)
+- [Passo 4: Instalar Add-ons Essenciais](#passo-4-instalar-add-ons-essenciais)
+  - [4.1 Listar Add-ons Disponíveis](#41-listar-add-ons-disponíveis)
+  - [4.2 Instalar Add-ons Essenciais](#42-instalar-add-ons-essenciais)
+  - [4.3 Verificar Add-ons Instalados](#43-verificar-add-ons-instalados)
+- [Passo 5: Configurar IngressClass e Tags para ALB](#passo-5-configurar-ingressclass-e-tags-para-alb)
+  - [5.1 Executar Script de Configuração Automática](#51-executar-script-de-configuração-automática)
+  - [5.2 Configuração Manual (Alternativa)](#52-configuração-manual-alternativa)
+- [Passo 6: Deploy do OpenTelemetry Demo](#passo-6-deploy-do-opentelemetry-demo)
+  - [6.1 Adicionar Repositório Helm do OpenTelemetry](#61-adicionar-repositório-helm-do-opentelemetry)
+  - [6.2 Criar Namespace](#62-criar-namespace)
+  - [6.3 Instalar OpenTelemetry Demo](#63-instalar-opentelemetry-demo)
+  - [6.4 Verificar Instalação](#64-verificar-instalação)
+  - [6.5 Acessar a Aplicação](#65-acessar-a-aplicação)
+- [Passo 7: Próximos Passos](#passo-7-próximos-passos)
+- [Custos Estimados](#custos-estimados)
+- [Limpeza do Ambiente](#limpeza-do-ambiente)
+
 ## O que é EKS Auto Mode?
 
 O **EKS Auto Mode** é uma funcionalidade que automatiza o gerenciamento completo da infraestrutura do cluster Kubernetes, incluindo:
@@ -411,216 +444,69 @@ kubectl apply -f kubernetes/alb-ingressclass.yaml
 
 💡 **Nota**: Sem essas tags, o Auto Mode não conseguirá criar ALBs e você verá erros como "couldn't auto-discover subnets".
 
-## Passo 6: Configurar Acesso Local ao Cluster
+## Passo 6: Deploy do OpenTelemetry Demo
 
-### 6.1 Atualizar kubeconfig Local
+Com o ambiente configurado, vamos fazer o deploy da aplicação de demonstração do OpenTelemetry.
 
-```bash
-# Configurar acesso ao cluster
-aws eks update-kubeconfig --name observability-lab-cluster --region us-east-1
-
-# Verificar contexto atual
-kubectl config current-context
-
-# Testar acesso
-kubectl get nodes
-kubectl get namespaces
-```
-
-### 6.2 Verificar Credenciais AWS
+### 6.1 Adicionar Repositório Helm do OpenTelemetry
 
 ```bash
-# Verificar identidade AWS
-aws sts get-caller-identity
+# Adicionar repositório
+helm repo add open-telemetry https://open-telemetry.github.io/opentelemetry-helm-charts
 
-# Verificar região configurada
-aws configure get region
+# Atualizar repositórios
+helm repo update
 ```
 
-## Passo 7: Validação do Ambiente
-
-### 7.1 Verificar Cluster EKS
+### 6.2 Criar Namespace
 
 ```bash
-# Informações do cluster
-kubectl cluster-info
-
-# Verificar Node Pools
-kubectl get nodepools
-
-# Verificar nodes (podem não existir ainda até fazer deploy de workloads)
-kubectl get nodes -o wide
-
-# Verificar system pods
-kubectl get pods -n kube-system
-
-# Verificar NodeClasses (configurações de nodes do Auto Mode)
-kubectl get nodeclasses
+# Criar namespace para o OpenTelemetry Demo
+kubectl create namespace app
 ```
 
-### 7.2 Verificar Ferramentas Locais
+### 6.3 Instalar OpenTelemetry Demo
 
 ```bash
-# Versões das ferramentas
-aws --version
-kubectl version --client
-helm version
+# Instalar usando o arquivo de valores customizado
+helm upgrade --install opentelemetry-demo open-telemetry/opentelemetry-demo \
+  --namespace app \
+  --values helm-values/opentelemetry-demo/values.yaml
 
-# Verificar conexão com o cluster
-kubectl cluster-info
-
-# Listar contextos disponíveis
-kubectl config get-contexts
+# Aguardar pods ficarem prontos (pode levar 3-5 minutos)
+kubectl get pods -n app -w
 ```
 
-### 7.3 Conectar com Lens Desktop
-
-Se você instalou o Lens Desktop ([ver guia de instalação](install-lens.md)):
-
-1. Abrir Lens Desktop
-2. O cluster aparecerá automaticamente na lista (já configurado via kubeconfig)
-3. Clicar no cluster para conectar
-4. Explorar o cluster visualmente através do Lens
-
-💡 **Dica**: Use `Ctrl/Cmd + K` no Lens para busca rápida de recursos.
-
-## Passo 8: Testar o Auto Mode
-
-### 8.1 Verificar Estado Inicial (Sem Nodes)
+### 6.4 Verificar Instalação
 
 ```bash
-# Verificar que não há nodes ainda
-kubectl get nodes
+# Verificar todos os pods
+kubectl get pods -n app
 
-# Verificar Node Pools disponíveis
-kubectl get nodepools
+# Verificar services
+kubectl get svc -n app
+
+# Verificar ingress (se configurado)
+kubectl get ingress -n app
 ```
 
-### 8.2 Fazer Deploy de Aplicação de Teste
+### 6.5 Acessar a Aplicação
 
 ```bash
-# Criar deployment de teste
-kubectl create deployment nginx-test --image=nginx --replicas=3
+# Obter URL do frontend (via Ingress ou LoadBalancer)
+kubectl get ingress -n app
 
-# Observar pods ficando pendentes
-kubectl get pods -w
-
-# Aguardar Auto Mode criar nodes (pode levar 2-3 minutos)
-# Pressione Ctrl+C para sair do watch
+# Ou via port-forward para teste local
+kubectl port-forward -n app svc/opentelemetry-demo-frontendproxy 8080:8080
 ```
 
-### 8.3 Verificar Nodes Criados Automaticamente
+Acesse no navegador: `http://localhost:8080`
 
-```bash
-# Verificar nodes criados pelo Auto Mode
-kubectl get nodes -o wide
+💡 **Nota**: O OpenTelemetry Demo é uma aplicação de e-commerce completa que gera traces, métricas e logs automaticamente, ideal para testar a stack de observabilidade.
 
-# Ver detalhes dos nodes
-kubectl describe nodes
+## Passo 7: Próximos Passos
 
-# Verificar pods agora rodando
-kubectl get pods -o wide
-```
-
-### 8.4 Testar Escalonamento
-
-```bash
-# Escalar deployment
-kubectl scale deployment nginx-test --replicas=10
-
-# Observar Auto Mode criando mais nodes se necessário
-kubectl get nodes -w
-
-# Verificar distribuição dos pods
-kubectl get pods -o wide
-```
-
-### 8.5 Testar Remoção Automática de Nodes
-
-```bash
-# Deletar deployment
-kubectl delete deployment nginx-test
-
-# Aguardar alguns minutos e verificar que nodes são removidos
-# O Auto Mode remove nodes ociosos automaticamente
-kubectl get nodes -w
-```
-
-### 8.6 Testar Criação de ALB com Ingress
-
-```bash
-# Criar um Ingress de teste
-cat <<EOF | kubectl apply -f -
-apiVersion: v1
-kind: Service
-metadata:
-  name: nginx-test
-  namespace: default
-spec:
-  ports:
-    - port: 80
-      targetPort: 80
-  selector:
-    app: nginx-test
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: nginx-test
-  namespace: default
-spec:
-  replicas: 2
-  selector:
-    matchLabels:
-      app: nginx-test
-  template:
-    metadata:
-      labels:
-        app: nginx-test
-    spec:
-      containers:
-      - name: nginx
-        image: nginx:latest
-        ports:
-        - containerPort: 80
----
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: nginx-test
-  namespace: default
-spec:
-  ingressClassName: alb
-  rules:
-  - http:
-      paths:
-      - path: /
-        pathType: Prefix
-        backend:
-          service:
-            name: nginx-test
-            port:
-              number: 80
-EOF
-
-# Aguardar criação do ALB (pode levar 2-3 minutos)
-kubectl get ingress nginx-test -w
-
-# Quando pronto, obter URL do ALB
-kubectl get ingress nginx-test -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
-
-# Testar acesso
-curl $(kubectl get ingress nginx-test -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
-
-# Limpar teste
-kubectl delete ingress nginx-test
-kubectl delete deployment nginx-test
-kubectl delete service nginx-test
-```
-
-## Passo 9: Próximos Passos
-
-Com o ambiente configurado, você pode prosseguir para:
+Com o OpenTelemetry Demo rodando, você pode prosseguir para:
 
 1. **Deploy da Stack de Observabilidade**
    ```bash
