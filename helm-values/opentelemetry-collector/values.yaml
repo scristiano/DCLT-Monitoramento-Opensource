@@ -179,6 +179,12 @@ config:
       tls:
         insecure: true
     
+    # Prometheus exporter - expõe métricas no formato Prometheus
+    prometheus:
+      endpoint: "0.0.0.0:8888"
+      resource_to_telemetry_conversion:
+        enabled: true
+    
     # Debug exporter (troubleshooting)
     debug:
       verbosity: detailed
@@ -218,7 +224,7 @@ config:
       metrics:
         receivers: [otlp, prometheus]
         processors: [memory_limiter, resource, batch]
-        exporters: [debug]
+        exporters: [prometheus, debug]
 
 # =============================================================================
 # AUTOSCALING

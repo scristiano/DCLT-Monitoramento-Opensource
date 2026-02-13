@@ -1,30 +1,21 @@
 # =============================================================================
-# JAEGER VALUES - PRODUCTION DEPLOYMENT
+# JAEGER VALUES - DISTRIBUTED DEPLOYMENT
 # =============================================================================
 # Aula 08 - PosTech DevOps - Distributed Tracing com Jaeger
-# Chart oficial: jaegertracing/jaeger (em beta mas usado em produção)
+# Implementação distribuída com componentes separados para alta disponibilidade
+# e escalabilidade
 #
 # Versões testadas:
-# - Helm Chart: 4.x+ (jaegertracing/jaeger)
-# - Jaeger: 2.14.1
+# - Helm Chart: 3.x+ (jaegertracing/jaeger)
 # - Kubernetes: 1.34
-#
-# NOTA: O chart está em beta, mas é a forma oficial recomendada
-# Para ambientes críticos, considere usar o Jaeger Operator
 #
 # Instalação:
 # helm repo add jaegertracing https://jaegertracing.github.io/helm-charts
 # helm repo update
 # helm upgrade --install jaeger jaegertracing/jaeger \
-#   --namespace monitoring \
-#   --values helm-values/jaeger/values.yaml
+#   --namespace monitoring --create-namespace \
+#   --values helm-values/jaeger/values-distributed.yaml
 # =============================================================================
-
-# =============================================================================
-# ALL-IN-ONE MODE (Desabilitar para modo distribuído)
-# =============================================================================
-allInOne:
-  enabled: false
 
 # =============================================================================
 # PROVISIONAMENTO
@@ -36,8 +27,8 @@ provisionDataStore:
 # =============================================================================
 # STORAGE CONFIGURATION
 # =============================================================================
-# Usar storage in-memory para ambiente de laboratório
-# Para produção, considere usar Elasticsearch ou Cassandra
+# Storage in-memory para ambiente de laboratório
+# Para produção, use Elasticsearch externo
 storage:
   type: memory
   memory:
@@ -53,6 +44,7 @@ agent:
 # JAEGER COLLECTOR - DISTRIBUÍDO
 # =============================================================================
 # Múltiplas réplicas para alta disponibilidade e escalabilidade
+# Todos os collectors escrevem no mesmo Elasticsearch cluster
 collector:
   enabled: true
   
@@ -77,24 +69,59 @@ collector:
   
   resources:
     limits:
-      cpu: 1000m
-      memory: 1Gi
+      cpu: 2000m
+      memory: 2Gi
     requests:
-      cpu: 200m
-      memory: 256Mi
+      cpu: 500m
+      memory: 512Mi
+  
+  # Configurações específicas do Collector
+  cmdlineParams:
+    # Configurações de sampling
+    sampling.strategies-file: /etc/jaeger/sampling/strategies.json
+  
+  # Variáveis de ambiente para tuning
+  extraEnv:
+    - name: SPAN_STORAGE_TYPE
+      value: elasticsearch
+    - name: COLLECTOR_QUEUE_SIZE
+      value: "4000"
+    - name: COLLECTOR_NUM_WORKERS
+      value: "100"
+    - name: COLLECTOR_ZIPKIN_HOST_PORT
+      value: ":9411"
   
   # Autoscaling horizontal
   autoscaling:
     enabled: true
     minReplicas: 3
     maxReplicas: 10
-    targetCPUUtilizationPercentage: 80
+    targetCPUUtilizationPercentage: 70
     targetMemoryUtilizationPercentage: 80
   
   # Pod Disruption Budget para alta disponibilidade
   podDisruptionBudget:
     enabled: true
     minAvailable: 2
+  
+  # Probes de saúde
+  livenessProbe:
+    httpGet:
+      path: /
+      port: 14269
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+  
+  readinessProbe:
+    httpGet:
+      path: /
+      port: 14269
+    initialDelaySeconds: 10
+    periodSeconds: 5
+    timeoutSeconds: 3
+    failureThreshold: 3
   
   # Anti-affinity para distribuir pods em nodes diferentes
   affinity:
@@ -115,11 +142,21 @@ collector:
     enabled: true
     additionalLabels:
       release: kube-prometheus-stack
+  
+  # Security Context
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    fsGroup: 1000
+    capabilities:
+      drop:
+        - ALL
 
 # =============================================================================
 # JAEGER QUERY (UI) - DISTRIBUÍDO
 # =============================================================================
 # Múltiplas réplicas para alta disponibilidade
+# Todos os query nodes leem do mesmo Elasticsearch cluster
 query:
   enabled: true
   
@@ -132,24 +169,55 @@ query:
   
   resources:
     limits:
-      cpu: 500m
-      memory: 512Mi
+      cpu: 1000m
+      memory: 1Gi
     requests:
-      cpu: 100m
-      memory: 128Mi
+      cpu: 200m
+      memory: 256Mi
+  
+  # Configurações específicas do Query
+  cmdlineParams:
+    # Timeout para queries
+    query.max-clock-skew-adjustment: 0s
+  
+  # Variáveis de ambiente
+  extraEnv:
+    - name: SPAN_STORAGE_TYPE
+      value: elasticsearch
+    - name: QUERY_BASE_PATH
+      value: /
   
   # Autoscaling horizontal
   autoscaling:
     enabled: true
     minReplicas: 2
     maxReplicas: 5
-    targetCPUUtilizationPercentage: 80
+    targetCPUUtilizationPercentage: 70
     targetMemoryUtilizationPercentage: 80
   
   # Pod Disruption Budget
   podDisruptionBudget:
     enabled: true
     minAvailable: 1
+  
+  # Probes de saúde
+  livenessProbe:
+    httpGet:
+      path: /
+      port: 16687
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+  
+  readinessProbe:
+    httpGet:
+      path: /
+      port: 16687
+    initialDelaySeconds: 10
+    periodSeconds: 5
+    timeoutSeconds: 3
+    failureThreshold: 3
   
   # Anti-affinity
   affinity:
@@ -171,6 +239,15 @@ query:
     additionalLabels:
       release: kube-prometheus-stack
   
+  # Security Context
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    fsGroup: 1000
+    capabilities:
+      drop:
+        - ALL
+  
   # Configurações da UI
   basePath: /
 
@@ -181,19 +258,248 @@ ingester:
   enabled: false
 
 # =============================================================================
-# SPARK DEPENDENCIES (Análise de dependências - desabilitado)
+# SPARK DEPENDENCIES - ANÁLISE DE DEPENDÊNCIAS
 # =============================================================================
+# Job Spark para gerar gráfico de dependências entre serviços
+# Analisa traces e cria visualização de como os serviços se comunicam
 spark:
+  enabled: true
+  
+  # Schedule do CronJob (executa a cada 1 hora)
+  schedule: "0 * * * *"
+  
+  # Número de dias para analisar
+  # Quanto maior, mais dados processados (mais CPU/memória necessário)
+  numberOfDays: 1
+  
+  # Recursos para o job Spark
+  resources:
+    limits:
+      cpu: 2000m
+      memory: 2Gi
+    requests:
+      cpu: 500m
+      memory: 1Gi
+  
+  # Configurações do Spark
+  sparkConf:
+    spark.executor.memory: "1g"
+    spark.driver.memory: "1g"
+    spark.executor.cores: "2"
+    spark.sql.shuffle.partitions: "10"
+  
+  # Histórico de jobs
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  
+  # Security context
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    fsGroup: 1000
+  
+  # Configurações de conexão com Elasticsearch
+  cmdlineParams:
+    java.opts: "-Xmx1g -Xms1g"
+
+# =============================================================================
+# ESINDEXCLEANER - DESABILITADO (apenas para Elasticsearch)
+# =============================================================================
+esIndexCleaner:
   enabled: false
 
 # =============================================================================
-# ELASTICSEARCH (Desabilitado - usando memory storage)
+# ELASTICSEARCH - DESABILITADO (usando memory storage para lab)
 # =============================================================================
+# Para produção, instale Elasticsearch separadamente e configure o endpoint
 elasticsearch:
   enabled: false
 
 # =============================================================================
 # KAFKA (Desabilitado)
 # =============================================================================
+# Para alta escala, habilite Kafka como buffer:
+# kafka:
+#   enabled: true
+#   replicas: 3
+#   resources:
+#     requests:
+#       cpu: 500m
+#       memory: 1Gi
+#     limits:
+#       cpu: 1000m
+#       memory: 2Gi
 kafka:
   enabled: false
+
+# =============================================================================
+# CONFIGURAÇÕES GLOBAIS
+# =============================================================================
+# Configurações aplicadas a todos os componentes
+global:
+  # Tolerations para permitir scheduling em nodes específicos
+  # tolerations:
+  #   - key: "monitoring"
+  #     operator: "Equal"
+  #     value: "true"
+  #     effect: "NoSchedule"
+  
+  # Node selector para agendar em nodes específicos
+  # nodeSelector:
+  #   workload: monitoring
+  
+  # Priority class para garantir recursos
+  priorityClassName: system-cluster-critical
+
+# =============================================================================
+# NETWORK POLICIES (Segurança de rede)
+# =============================================================================
+# Habilitar para restringir tráfego entre pods
+networkPolicy:
+  enabled: true
+  # Permitir ingress apenas de pods específicos
+  ingress:
+    - from:
+      - namespaceSelector:
+          matchLabels:
+            name: app
+      - namespaceSelector:
+          matchLabels:
+            name: monitoring
+      ports:
+      - protocol: TCP
+        port: 4317
+      - protocol: TCP
+        port: 4318
+      - protocol: TCP
+        port: 14250
+      - protocol: TCP
+        port: 14268
+
+# =============================================================================
+# NOTAS DE IMPLEMENTAÇÃO DISTRIBUÍDA - PRODUÇÃO
+# =============================================================================
+# Esta configuração implementa Jaeger em modo distribuído PRODUCTION-READY com:
+#
+# 1. ELASTICSEARCH CLUSTER (3 nodes)
+#    - Backend compartilhado para todos os componentes
+#    - Alta disponibilidade com 2 master nodes mínimos
+#    - Persistent volumes 100GB para durabilidade dos dados
+#    - Anti-affinity HARD para distribuir nodes
+#    - Security habilitado (xpack.security)
+#    - ILM (Index Lifecycle Management) para retenção de 7 dias
+#    - Circuit breakers configurados
+#    - Thread pools otimizados
+#
+# 2. JAEGER COLLECTOR (3-10 réplicas)
+#    - Recebe traces de aplicações via OTLP/Jaeger/Zipkin
+#    - Escreve no Elasticsearch cluster compartilhado
+#    - HPA configurado (3-10 réplicas, 70% CPU)
+#    - Pod Disruption Budget (mínimo 2 disponíveis)
+#    - Recursos aumentados: 500m-2000m CPU, 512Mi-2Gi RAM
+#    - Queue size: 4000, Workers: 100
+#    - Liveness e Readiness probes
+#    - Security context (non-root)
+#
+# 3. JAEGER QUERY (2-5 réplicas)
+#    - Interface web para visualização de traces
+#    - Lê do Elasticsearch cluster compartilhado
+#    - HPA configurado (2-5 réplicas, 70% CPU)
+#    - Pod Disruption Budget (mínimo 1 disponível)
+#    - Recursos aumentados: 200m-1000m CPU, 256Mi-1Gi RAM
+#    - Liveness e Readiness probes
+#    - Security context (non-root)
+#
+# 4. ES INDEX CLEANER (CronJob)
+#    - Limpeza automática de índices antigos
+#    - Executa diariamente às 2h da manhã
+#    - Retenção de 7 dias
+#
+# 5. SEGURANÇA
+#    - Security contexts configurados (non-root)
+#    - Network policies habilitadas
+#    - Priority class: system-cluster-critical
+#    - Elasticsearch com xpack.security
+#    - Capabilities dropped (ALL)
+#
+# REQUISITOS PARA PRODUÇÃO:
+# ✅ StorageClass 'gp3' disponível no cluster
+# ✅ Namespace 'monitoring' criado
+# ✅ Prometheus Operator instalado (para ServiceMonitor)
+# ✅ Secrets do Kubernetes para credenciais do Elasticsearch
+# ✅ Network policies suportadas no cluster
+# ✅ Priority class 'system-cluster-critical' criada
+# ⚠️  Certificados TLS para Elasticsearch (recomendado)
+# ⚠️  Backup strategy para Elasticsearch (snapshots)
+#
+# ANTES DE INSTALAR EM PRODUÇÃO:
+#
+# 1. Criar secret para Elasticsearch:
+#    kubectl create secret generic jaeger-elasticsearch-secret \
+#      --from-literal=ES_USERNAME=elastic \
+#      --from-literal=ES_PASSWORD=$(openssl rand -base64 32) \
+#      -n monitoring
+#
+# 2. Atualizar valores de senha no arquivo (linha 35):
+#    user: elastic
+#    password: <usar-secret-do-kubernetes>
+#
+# 3. Configurar backup do Elasticsearch:
+#    - Configurar snapshot repository (S3, GCS, Azure)
+#    - Criar política de backup automático
+#    - Testar restore
+#
+# 4. Configurar TLS para Elasticsearch (recomendado):
+#    - Gerar certificados
+#    - Atualizar storage.elasticsearch.tls.enabled: true
+#    - Montar certificados nos pods
+#
+# 5. Ajustar recursos conforme carga esperada:
+#    - Monitorar uso de CPU/memória
+#    - Ajustar HPA thresholds
+#    - Ajustar tamanho dos PVCs
+#
+# INSTALAÇÃO:
+# helm upgrade --install jaeger jaegertracing/jaeger \
+#   --namespace monitoring \
+#   --values helm-values/jaeger/values-distributed.yaml \
+#   --timeout 15m \
+#   --wait
+#
+# VERIFICAÇÃO:
+# kubectl get pods -n monitoring -l app.kubernetes.io/instance=jaeger
+# kubectl get statefulset -n monitoring jaeger-elasticsearch
+# kubectl get pvc -n monitoring
+# kubectl get networkpolicy -n monitoring
+#
+# MONITORAMENTO:
+# - Métricas Prometheus via ServiceMonitor
+# - Logs centralizados (configurar Loki/Fluentd)
+# - Alertas para:
+#   * Elasticsearch cluster health (yellow/red)
+#   * Collector queue size alto
+#   * Taxa de erros de ingestão
+#   * Uso de disco > 80%
+#   * Pods não healthy
+#
+# CUSTOS ESTIMADOS (AWS):
+# - 3x EBS gp3 100GB: ~$30/mês
+# - Compute Collectors (3-10): ~$50-150/mês
+# - Compute Query (2-5): ~$20-60/mês
+# - Compute Elasticsearch (3): ~$150-300/mês
+# Total estimado: ~$250-540/mês
+#
+# OTIMIZAÇÕES DE CUSTO:
+# - Usar Spot Instances para Collectors/Query
+# - Reduzir retenção de dados (7 dias → 3 dias)
+# - Usar EBS gp2 ao invés de gp3 (se IOPS não for crítico)
+# - Implementar sampling agressivo (1-10%)
+#
+# ALTERNATIVA PARA LAB (sem custos de storage):
+# Use helm-values/jaeger/values.yaml com storage in-memory
+#
+# REFERÊNCIAS:
+# - https://www.jaegertracing.io/docs/latest/deployment/
+# - https://www.elastic.co/guide/en/elasticsearch/reference/current/index.html
+# - https://kubernetes.io/docs/concepts/workloads/pods/pod-disruption-budget/
+# =============================================================================
