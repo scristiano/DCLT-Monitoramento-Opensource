@@ -14,6 +14,18 @@ app = Flask(__name__)
 DATABASE_URL = os.getenv('DATABASE_URL', 'postgresql://appuser:apppass@postgres:5432/appdb')
 REDIS_URL = os.getenv('REDIS_URL', 'redis://redis:6379')
 
+@app.before_request
+def log_trace_headers():
+    """Log trace headers for debugging"""
+    traceparent = request.headers.get('traceparent')
+    tracestate = request.headers.get('tracestate')
+    if traceparent:
+        logger.info(f"🔍 Received traceparent: {traceparent}")
+    if tracestate:
+        logger.info(f"🔍 Received tracestate: {tracestate}")
+    if not traceparent and not tracestate:
+        logger.warning("⚠️  No trace headers received!")
+
 def get_db_connection():
     return psycopg2.connect(DATABASE_URL)
 

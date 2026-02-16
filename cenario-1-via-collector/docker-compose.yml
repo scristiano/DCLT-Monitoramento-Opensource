@@ -39,10 +39,6 @@ services:
       - OTEL_SERVICE_NAME=backend-service
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://OBSERVABILITY_IP:4319
       - OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
-      - OTEL_TRACES_EXPORTER=otlp
-      - OTEL_METRICS_EXPORTER=otlp
-      - OTEL_LOGS_EXPORTER=otlp
-      - OTEL_PYTHON_LOGGING_AUTO_INSTRUMENTATION_ENABLED=true
       - DATABASE_URL=postgresql://appuser:apppass@postgres:5432/appdb
       - REDIS_URL=redis://redis:6379
     ports:
