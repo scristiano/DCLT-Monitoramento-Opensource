@@ -1,87 +1,243 @@
+# =============================================================================
+# OPENTELEMETRY COLLECTOR CONFIGURATION
+# =============================================================================
+# Configuração do pipeline central de processamento de telemetria
+# Aula 06 - PosTech DevOps e Arquitetura Cloud - Monitoramento OpenSource
+#
+# Este arquivo define como o OTel Collector:
+# 1. RECEBE telemetria (receivers) - OTLP e Prometheus
+# 2. PROCESSA dados (processors) - Batch, limites, enriquecimento
+# 3. EXPORTA para backends (exporters) - Prometheus, Jaeger, Debug
+#
+# Documentação: https://opentelemetry.io/docs/collector/configuration/
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# RECEIVERS - Como o Collector recebe telemetria
+# -----------------------------------------------------------------------------
+# Receivers são responsáveis por receber dados de telemetria de aplicações
+# e outros coletores. Suportam múltiplos protocolos e formatos.
 receivers:
+  # OTLP (OpenTelemetry Protocol) - Protocolo nativo do OpenTelemetry
+  # Recebe traces, métricas e logs das aplicações instrumentadas
   otlp:
     protocols:
+      # gRPC - Protocolo binário eficiente (porta 4317)
+      # Usado para comunicação de alta performance
       grpc:
-        endpoint: 0.0.0.0:4317
+        endpoint: 0.0.0.0:4317        # Escuta em todas as interfaces
+      
+      # HTTP - Protocolo baseado em HTTP/JSON (porta 4318)
+      # Mais compatível com firewalls e proxies
       http:
-        endpoint: 0.0.0.0:4318
+        endpoint: 0.0.0.0:4318        # Escuta em todas as interfaces
         cors:
           allowed_origins:
-            - "*"
+            - "*"                     # Permite CORS de qualquer origem (dev/test)
+                                      # Em produção, especifique origens permitidas
+  
+  # Prometheus - Scrape de métricas do próprio Collector
+  # Permite monitorar a saúde e performance do Collector
   prometheus:
     config:
       scrape_configs:
         - job_name: 'otel-collector'
-          scrape_interval: 10s
+          scrape_interval: 10s        # Coleta métricas a cada 10 segundos
           static_configs:
-            - targets: ['localhost:8888']
+            - targets: ['localhost:8888']  # Endpoint de métricas do Collector
 
+# -----------------------------------------------------------------------------
+# PROCESSORS - Como o Collector processa telemetria
+# -----------------------------------------------------------------------------
+# Processors transformam, filtram e enriquecem dados antes de exportar.
+# São executados na ordem definida nos pipelines.
 processors:
+  # BATCH - Agrupa dados em lotes para eficiência
+  # Reduz número de requisições e melhora throughput
   batch:
-    timeout: 10s
-    send_batch_size: 1024
+    timeout: 10s                      # Envia lote após 10s mesmo se não estiver cheio
+    send_batch_size: 1024             # Envia quando atingir 1024 spans/métricas/logs
+  
+  # MEMORY LIMITER - Previne uso excessivo de memória
+  # Protege o Collector de crashes por falta de memória
   memory_limiter:
-    check_interval: 1s
-    limit_mib: 512
-    spike_limit_mib: 128
+    check_interval: 1s                # Verifica uso de memória a cada 1s
+    limit_mib: 512                    # Limite máximo de memória (512 MB)
+    spike_limit_mib: 128              # Margem para picos temporários (128 MB)
+                                      # Total máximo: 640 MB (512 + 128)
+  
+  # RESOURCE - Adiciona/modifica atributos de recurso
+  # Enriquece telemetria com informações de contexto
   resource:
     attributes:
+      # Adiciona ambiente de deployment
       - key: environment
-        value: production
-        action: upsert
+        value: production             # Identifica ambiente (dev/staging/prod)
+        action: upsert                # Adiciona ou atualiza se já existir
+      
+      # Identifica o coletor
       - key: collector.name
-        value: otel-collector-central
+        value: otel-collector-central # Nome único deste coletor
         action: upsert
+  
+  # ATTRIBUTES - Manipula atributos de spans/métricas
+  # Remove dados sensíveis ou desnecessários
   attributes:
     actions:
+      # Remove user agent para reduzir cardinalidade
       - key: http.user_agent
-        action: delete
+        action: delete                # Remove atributo completamente
+  
+  # RESOURCE DETECTION - Adiciona service.name como label
+  # Transforma atributos de recurso em labels de métrica
+  transform:
+    metric_statements:
+      - context: datapoint
+        statements:
+          # Copia service.name do recurso para um atributo da métrica
+          - set(attributes["service_name"], resource.attributes["service.name"])
+          # Copia service.version se existir
+          - set(attributes["service_version"], resource.attributes["service.version"]) where resource.attributes["service.version"] != nil
 
+# -----------------------------------------------------------------------------
+# EXPORTERS - Para onde o Collector envia telemetria
+# -----------------------------------------------------------------------------
+# Exporters enviam dados processados para sistemas de backend.
+# Cada tipo de sinal (traces/metrics/logs) pode ter múltiplos exporters.
 exporters:
+  # PROMETHEUS REMOTE WRITE - Envia métricas para Prometheus
+  # Usa API de Remote Write para ingestão de métricas
   prometheusremotewrite:
-    endpoint: http://prometheus:9090/api/v1/write
+    endpoint: http://prometheus:9090/api/v1/write  # Endpoint do Prometheus
     tls:
-      insecure: true
+      insecure: true                  # Desabilita TLS (ambiente interno)
+                                      # Em produção, use TLS com certificados
+  
+  # OTLP/JAEGER - Envia traces para Jaeger
+  # Usa protocolo OTLP nativo do Jaeger
   otlp/jaeger:
-    endpoint: jaeger:4317
+    endpoint: jaeger:4317             # Endpoint gRPC do Jaeger
     tls:
-      insecure: true
+      insecure: true                  # Desabilita TLS (ambiente interno)
+  
+  # DEBUG - Exporter para debugging
+  # Imprime telemetria nos logs do Collector (útil para troubleshooting)
   debug:
-    verbosity: normal
-    sampling_initial: 5
-    sampling_thereafter: 200
+    verbosity: normal                 # Nível de detalhe (basic/normal/detailed)
+    sampling_initial: 5               # Imprime primeiros 5 itens
+    sampling_thereafter: 200          # Depois imprime 1 a cada 200 itens
 
+# -----------------------------------------------------------------------------
+# EXTENSIONS - Funcionalidades adicionais do Collector
+# -----------------------------------------------------------------------------
+# Extensions fornecem capacidades que não estão diretamente relacionadas
+# ao processamento de telemetria (health checks, profiling, etc).
 extensions:
+  # HEALTH CHECK - Endpoint de health check
+  # Usado por load balancers e orquestradores (Kubernetes, ECS)
   health_check:
-    endpoint: 0.0.0.0:13133
+    endpoint: 0.0.0.0:13133           # HTTP endpoint: GET /
+                                      # Retorna 200 OK se Collector está saudável
+  
+  # PPROF - Profiling de performance
+  # Permite análise de CPU e memória do Collector
   pprof:
-    endpoint: 0.0.0.0:1777
+    endpoint: 0.0.0.0:1777            # Acesse http://collector:1777/debug/pprof
+                                      # Útil para debugging de performance
+  
+  # ZPAGES - Páginas de diagnóstico
+  # Interface web com informações sobre pipelines e componentes
   zpages:
-    endpoint: 0.0.0.0:55679
+    endpoint: 0.0.0.0:55679           # Acesse http://collector:55679/debug/
+                                      # Mostra estatísticas em tempo real
 
+# -----------------------------------------------------------------------------
+# SERVICE - Configuração do serviço do Collector
+# -----------------------------------------------------------------------------
+# Define quais extensions, receivers, processors e exporters são usados
+# e como são conectados através de pipelines.
 service:
+  # Extensions habilitadas
   extensions: [health_check, pprof, zpages]
+  
+  # PIPELINES - Fluxo de dados por tipo de sinal
+  # Cada pipeline define: receivers → processors → exporters
   pipelines:
+    # TRACES PIPELINE - Processamento de traces distribuídos
+    # Fluxo: Apps → OTLP Receiver → Processors → Jaeger
     traces:
-      receivers: [otlp]
+      receivers: [otlp]               # Recebe traces via OTLP (gRPC/HTTP)
       processors: [memory_limiter, batch, resource, attributes]
-      exporters: [otlp/jaeger, debug]
+                                      # 1. Limita memória
+                                      # 2. Agrupa em lotes
+                                      # 3. Adiciona atributos de recurso
+                                      # 4. Remove atributos desnecessários
+      exporters: [otlp/jaeger, debug] # Envia para Jaeger e logs de debug
+    
+    # METRICS PIPELINE - Processamento de métricas
+    # Fluxo: Apps + Self-monitoring → Processors → Prometheus
     metrics:
-      receivers: [otlp, prometheus]
-      processors: [memory_limiter, batch, resource]
+      receivers: [otlp, prometheus]   # Recebe métricas via OTLP e scrape próprio
+      processors: [memory_limiter, resource, transform, batch]
+                                      # 1. Limita memória
+                                      # 2. Adiciona atributos de recurso
+                                      # 3. Transforma service.name em label
+                                      # 4. Agrupa em lotes
       exporters: [prometheusremotewrite, debug]
+                                      # Envia para Prometheus e logs de debug
+    
+    # LOGS PIPELINE - Processamento de logs
+    # Fluxo: Apps → OTLP Receiver → Processors → Debug
+    # NOTA: Loki exporter não está configurado (apenas debug)
     logs:
-      receivers: [otlp]
+      receivers: [otlp]               # Recebe logs via OTLP (gRPC/HTTP)
       processors: [memory_limiter, batch, resource]
-      exporters: [debug]
+                                      # 1. Limita memória
+                                      # 2. Agrupa em lotes
+                                      # 3. Adiciona atributos de recurso
+      exporters: [debug]              # Apenas logs de debug (sem Loki)
+                                      # TODO: Adicionar exporter para Loki
+  
+  # TELEMETRY - Telemetria do próprio Collector
+  # Configuração de logs e métricas internas do Collector
   telemetry:
+    # Logs internos do Collector
     logs:
-      level: info
+      level: info                     # Nível de log (debug/info/warn/error)
+                                      # Use 'debug' para troubleshooting
+    
+    # Métricas internas do Collector
+    # Expostas via Prometheus no endpoint :8888/metrics
     metrics:
-      level: detailed
+      level: detailed                 # Nível de detalhe (none/basic/normal/detailed)
       readers:
         - pull:
             exporter:
               prometheus:
-                host: 0.0.0.0
-                port: 8888
+                host: 0.0.0.0         # Escuta em todas as interfaces
+                port: 8888            # Porta para scrape de métricas
+                                      # Acesse: http://collector:8888/metrics
+
+# =============================================================================
+# PORTAS UTILIZADAS PELO COLLECTOR
+# =============================================================================
+# 4317  - OTLP gRPC (recebe traces/metrics/logs)
+# 4318  - OTLP HTTP (recebe traces/metrics/logs)
+# 8888  - Métricas do Collector (Prometheus scrape)
+# 13133 - Health check endpoint
+# 1777  - pprof (profiling)
+# 55679 - zpages (diagnóstico)
+#
+# FLUXO DE DADOS:
+# 1. Apps enviam telemetria → OTLP Receiver (4317/4318)
+# 2. Processors transformam dados → Batch, Resource, Attributes
+# 3. Exporters enviam para backends → Prometheus, Jaeger
+# 4. Collector expõe próprias métricas → Prometheus (8888)
+#
+# TROUBLESHOOTING:
+# - Logs: docker-compose logs otel-collector
+# - Métricas: curl http://localhost:8888/metrics
+# - Health: curl http://localhost:13133/
+# - Zpages: http://localhost:55679/debug/
+# - Aumentar logs: telemetry.logs.level = debug
+# =============================================================================

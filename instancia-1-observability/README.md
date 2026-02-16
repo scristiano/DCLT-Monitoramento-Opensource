@@ -36,7 +36,7 @@ Esta instância contém a **stack completa de observabilidade** que serve **ambo
 - **Função**: Visualização unificada de métricas, logs e traces
 - **Acesso**: http://IP_INSTANCIA_1:3000
 - **Credenciais**: admin / admin123
-- **Data Sources**: Prometheus, Loki, Jaeger (pré-configurados)
+- **Data Sources**: Prometheus, Loki, Jaeger, Alertmanager (provisionados automaticamente)
 
 ### 📊 Prometheus (porta 9090)
 - **Função**: Armazenamento e consulta de métricas
@@ -61,6 +61,12 @@ Esta instância contém a **stack completa de observabilidade** que serve **ambo
 - **Acesso**: http://IP_INSTANCIA_1:4319 (OTLP HTTP)
 - **Processa**: Métricas, logs e traces
 - **Exporta para**: Prometheus, Loki, Jaeger
+
+### 🚨 Alertmanager (porta 9093)
+- **Função**: Gerenciamento e roteamento de alertas
+- **Acesso**: http://IP_INSTANCIA_1:9093
+- **Recebe de**: Prometheus
+- **Notificações**: Email, Slack, PagerDuty, Webhook (configurável)
 
 ## Setup
 
@@ -140,16 +146,58 @@ curl http://localhost:8888/metrics
 
 ## Configuração dos Data Sources no Grafana
 
-Os data sources são **automaticamente provisionados** via `grafana-datasources.yml`:
+Os data sources são **automaticamente provisionados** via `grafana-datasources.yml` quando o Grafana inicia:
 
-- ✅ **Prometheus**: http://prometheus:9090
-- ✅ **Loki**: http://loki:3100
-- ✅ **Jaeger**: http://jaeger:16686
+### ✅ Datasources Automáticos
 
-Para verificar:
-1. Acesse Grafana
+1. **Prometheus** (padrão)
+   - URL: http://prometheus:9090
+   - Métricas das aplicações e do OTel Collector
+   - Correlação com Jaeger via exemplars
+
+2. **Loki**
+   - URL: http://loki:3100
+   - Logs das aplicações
+   - Extração automática de trace_id para navegação
+
+3. **Jaeger**
+   - URL: http://jaeger:16686
+   - Traces distribuídos
+   - Correlação com Loki (traces → logs)
+   - Correlação com Prometheus (traces → métricas)
+
+4. **Alertmanager**
+   - URL: http://alertmanager:9093
+   - Gerenciamento de alertas do Prometheus
+
+### 🔗 Correlação Automática
+
+Os datasources estão configurados para navegação fluida:
+
+- **Métricas → Traces**: Clique em exemplars no Prometheus para ver traces relacionados
+- **Traces → Logs**: Clique em spans no Jaeger para ver logs relacionados
+- **Traces → Métricas**: Veja métricas relacionadas a um trace específico
+- **Logs → Traces**: Clique em trace_id nos logs para ver o trace completo
+
+### Verificar Datasources
+
+Para verificar se foram criados corretamente:
+1. Acesse Grafana: http://IP_INSTANCIA_1:3000
 2. Menu → Connections → Data sources
-3. Teste cada data source
+3. Todos devem aparecer com status "Working" ✅
+
+### Recriar Datasources
+
+Se precisar recriar os datasources:
+
+```bash
+# Remover volume do Grafana
+docker compose down
+docker volume rm instancia-1-observability_grafana-data
+
+# Reiniciar (datasources serão recriados automaticamente)
+docker compose up -d
+```
 
 ## Queries de Exemplo
 
@@ -209,7 +257,17 @@ Configuração do Loki:
 - Limits config
 
 ### grafana-datasources.yml
-Provisionamento automático dos data sources.
+Provisionamento automático dos data sources:
+- Prometheus (com correlação para Jaeger via exemplars)
+- Loki (com extração de trace_id)
+- Jaeger (com correlação para Loki e Prometheus)
+- Alertmanager
+
+### alertmanager.yml
+Configuração do Alertmanager:
+- Roteamento de alertas por severidade
+- Agrupamento e inibição de alertas
+- Templates para notificações (Email, Slack, PagerDuty)
 
 ## Troubleshooting
 

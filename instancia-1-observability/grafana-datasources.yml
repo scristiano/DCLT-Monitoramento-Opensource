@@ -1,0 +1,139 @@
+# =============================================================================
+# GRAFANA DATASOURCES PROVISIONING
+# =============================================================================
+# Configuração automática de datasources no Grafana
+# Este arquivo é carregado automaticamente quando o Grafana inicia
+#
+# Documentação: https://grafana.com/docs/grafana/latest/administration/provisioning/#data-sources
+# =============================================================================
+
+apiVersion: 1
+
+# Lista de datasources a serem criados/atualizados
+datasources:
+  # ---------------------------------------------------------------------------
+  # PROMETHEUS - Métricas
+  # ---------------------------------------------------------------------------
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: true
+    jsonData:
+      httpMethod: POST
+      exemplarTraceIdDestinations:
+        # Conecta exemplars do Prometheus com traces no Jaeger
+        - name: trace_id
+          datasourceUid: jaeger
+      timeInterval: 30s
+    version: 1
+
+  # ---------------------------------------------------------------------------
+  # LOKI - Logs
+  # ---------------------------------------------------------------------------
+  - name: Loki
+    type: loki
+    access: proxy
+    url: http://loki:3100
+    editable: true
+    jsonData:
+      maxLines: 1000
+      derivedFields:
+        # Extrai trace_id dos logs e cria link para Jaeger
+        - datasourceUid: jaeger
+          matcherRegex: "trace_id=(\\w+)"
+          name: TraceID
+          url: "$${__value.raw}"
+    version: 1
+
+  # ---------------------------------------------------------------------------
+  # JAEGER - Traces Distribuídos
+  # ---------------------------------------------------------------------------
+  - name: Jaeger
+    type: jaeger
+    uid: jaeger
+    access: proxy
+    url: http://jaeger:16686
+    editable: true
+    jsonData:
+      tracesToLogsV2:
+        # Conecta traces do Jaeger com logs no Loki
+        datasourceUid: loki
+        spanStartTimeShift: '-1h'
+        spanEndTimeShift: '1h'
+        tags:
+          - key: 'service.name'
+            value: 'service_name'
+        filterByTraceID: true
+        filterBySpanID: false
+      tracesToMetrics:
+        # Conecta traces do Jaeger com métricas no Prometheus
+        datasourceUid: prometheus
+        spanStartTimeShift: '-1h'
+        spanEndTimeShift: '1h'
+        tags:
+          - key: 'service.name'
+            value: 'service_name'
+        queries:
+          - name: 'Request Rate'
+            query: 'sum(rate(http_server_duration_milliseconds_count{$$__tags}[5m]))'
+          - name: 'Error Rate'
+            query: 'sum(rate(http_server_duration_milliseconds_count{$$__tags,http_status_code=~"5.."}[5m]))'
+          - name: 'Duration P95'
+            query: 'histogram_quantile(0.95, sum(rate(http_server_duration_milliseconds_bucket{$$__tags}[5m])) by (le))'
+      nodeGraph:
+        enabled: true
+      spanBar:
+        type: 'Tag'
+        tag: 'http.status_code'
+    version: 1
+
+  # ---------------------------------------------------------------------------
+  # ALERTMANAGER - Alertas (Opcional)
+  # ---------------------------------------------------------------------------
+  - name: Alertmanager
+    type: alertmanager
+    access: proxy
+    url: http://alertmanager:9093
+    editable: true
+    jsonData:
+      implementation: prometheus
+      handleGrafanaManagedAlerts: false
+    version: 1
+
+# =============================================================================
+# CONFIGURAÇÕES DOS DATASOURCES
+# =============================================================================
+#
+# PROMETHEUS:
+# - isDefault: true - Define como datasource padrão
+# - exemplarTraceIdDestinations - Conecta métricas com traces
+# - timeInterval - Intervalo mínimo de scrape
+#
+# LOKI:
+# - derivedFields - Extrai trace_id dos logs para navegação
+# - maxLines - Limite de linhas retornadas
+#
+# JAEGER:
+# - tracesToLogsV2 - Navegação de traces para logs
+# - tracesToMetrics - Navegação de traces para métricas
+# - nodeGraph - Visualização de grafo de serviços
+# - spanBar - Coloração de spans por tag
+#
+# ALERTMANAGER:
+# - implementation - Tipo de implementação (prometheus/cortex)
+# - handleGrafanaManagedAlerts - Gerenciar alertas do Grafana
+#
+# =============================================================================
+# CORRELAÇÃO DE DADOS (Observability Correlation)
+# =============================================================================
+#
+# Este arquivo configura a correlação automática entre:
+# 1. Métricas (Prometheus) → Traces (Jaeger) via exemplars
+# 2. Traces (Jaeger) → Logs (Loki) via trace_id
+# 3. Traces (Jaeger) → Métricas (Prometheus) via tags
+# 4. Logs (Loki) → Traces (Jaeger) via trace_id extraído
+#
+# Isso permite navegação fluida entre os três pilares da observabilidade!
+# =============================================================================
