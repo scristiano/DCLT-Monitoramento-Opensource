@@ -170,6 +170,63 @@ Os data sources são **automaticamente provisionados** via `grafana-datasources.
    - URL: http://alertmanager:9093
    - Gerenciamento de alertas do Prometheus
 
+## 📊 Dashboards Automáticos
+
+Os seguintes dashboards são criados automaticamente:
+
+### 1. Three Pillars Correlation ⭐ NOVO
+- **Localização**: Home (raiz)
+- **Destaque**: Dashboard que integra Prometheus + Jaeger + Loki
+- **Conteúdo**:
+  - 📊 **Métricas** (Prometheus):
+    - Request Rate por serviço
+    - P95 Latency com exemplars (clique para ver traces)
+    - Status Code Distribution
+  - 🔍 **Traces** (Jaeger):
+    - Recent Traces (clique para ver logs relacionados)
+    - Navegação para métricas relacionadas
+  - 📝 **Logs** (Loki):
+    - Application Logs (com trace_id para correlação)
+    - Error Logs filtrados
+  - 🔗 **Guias de Correlação**:
+    - Como navegar entre métricas → traces → logs
+    - Fluxos de investigação (alta latência, erros, debugging)
+
+### 2. Observability Overview
+- **Localização**: Home (raiz)
+- **Conteúdo**:
+  - Total Request Rate
+  - Error Rate (5xx)
+  - P95 Latency
+  - OTel Collector Status
+  - Request Rate by Service
+  - Latency by Service (P50, P95, P99)
+  - HTTP Status Codes Distribution
+  - Top 10 Endpoints by Request Rate
+
+### 3. Application Monitoring
+- **Localização**: Pasta "Applications"
+- **Conteúdo**:
+  - Request Rate (filtrado por serviço)
+  - Latency (P50, P95, P99)
+  - Error Rate (4xx e 5xx)
+  - Requests by Status Code
+  - Top 10 Endpoints by Request Rate
+  - Top 10 Slowest Endpoints (P95)
+- **Variável**: Filtro por serviço (frontend/backend)
+
+### 4. OpenTelemetry Collector
+- **Localização**: Pasta "Infrastructure"
+- **Conteúdo**:
+  - Collector Status
+  - Spans Received/sec
+  - Metrics Received/sec
+  - Failed Exports/sec
+  - Spans Flow (Received vs Sent)
+  - Metrics Flow (Received vs Sent)
+  - Exporter Queue Size
+  - Errors and Failures
+
 ### 🔗 Correlação Automática
 
 Os datasources estão configurados para navegação fluida:
@@ -186,16 +243,27 @@ Para verificar se foram criados corretamente:
 2. Menu → Connections → Data sources
 3. Todos devem aparecer com status "Working" ✅
 
-### Recriar Datasources
+### Verificar Dashboards
 
-Se precisar recriar os datasources:
+Para verificar se foram criados corretamente:
+1. Acesse Grafana: http://IP_INSTANCIA_1:3000
+2. Menu → Dashboards
+3. Você deve ver:
+   - **Three Pillars Correlation** ⭐ (na raiz) - Dashboard de correlação
+   - **Observability Overview** (na raiz)
+   - Pasta **Applications** com dashboard "Application Monitoring"
+   - Pasta **Infrastructure** com dashboard "OpenTelemetry Collector"
+
+### Recriar Datasources e Dashboards
+
+Se precisar recriar do zero:
 
 ```bash
 # Remover volume do Grafana
 docker compose down
 docker volume rm instancia-1-observability_grafana-data
 
-# Reiniciar (datasources serão recriados automaticamente)
+# Reiniciar (datasources e dashboards serão recriados automaticamente)
 docker compose up -d
 ```
 
@@ -262,6 +330,17 @@ Provisionamento automático dos data sources:
 - Loki (com extração de trace_id)
 - Jaeger (com correlação para Loki e Prometheus)
 - Alertmanager
+
+### grafana-dashboards.yml
+Provisionamento automático dos dashboards:
+- Define pastas e localização dos dashboards JSON
+- Configuração de auto-reload
+
+### dashboards/
+Diretório com dashboards JSON pré-configurados:
+- **overview/** - Observability Overview (visão geral do sistema)
+- **applications/** - Application Monitoring (métricas das apps)
+- **infrastructure/** - OpenTelemetry Collector (métricas do collector)
 
 ### alertmanager.yml
 Configuração do Alertmanager:
