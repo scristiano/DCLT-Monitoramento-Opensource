@@ -36,5 +36,14 @@ scrape_configs:
         labels:
           service: 'jaeger'
 
+  # Alloy monitoring (Scenario 2 - Instance 2)
+  - job_name: 'alloy'
+    static_configs:
+      - targets: ['INSTANCE_2_IP:12345']
+        labels:
+          service: 'alloy'
+          scenario: 'scenario-2'
+          instance: 'instance-2'
+
 remote_write:
   - url: http://localhost:9090/api/v1/write

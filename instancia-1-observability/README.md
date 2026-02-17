@@ -170,12 +170,24 @@ Os data sources são **automaticamente provisionados** via `grafana-datasources.
    - URL: http://alertmanager:9093
    - Gerenciamento de alertas do Prometheus
 
-## 📊 Dashboards Automáticos
+## 📊 Dashboards Disponíveis
 
-Os seguintes dashboards são criados automaticamente:
+Os seguintes dashboards estão disponíveis para importação manual:
 
-### 1. Three Pillars Correlation ⭐ NOVO
-- **Localização**: Home (raiz)
+### Como Importar Dashboards
+
+1. Acesse Grafana: http://IP_INSTANCIA_1:3000
+2. Menu → Dashboards → New → Import
+3. Clique em "Upload JSON file"
+4. Selecione um dos arquivos JSON da pasta `dashboards/`
+5. Selecione o datasource "Prometheus" quando solicitado
+6. Clique em "Import"
+
+### Dashboards Disponíveis
+
+#### 1. Three Pillars Correlation ⭐ RECOMENDADO
+- **Arquivo**: `dashboards/overview/three-pillars-correlation.json`
+- **Localização sugerida**: Home (raiz)
 - **Destaque**: Dashboard que integra Prometheus + Jaeger + Loki
 - **Conteúdo**:
   - 📊 **Métricas** (Prometheus):
@@ -191,9 +203,11 @@ Os seguintes dashboards são criados automaticamente:
   - 🔗 **Guias de Correlação**:
     - Como navegar entre métricas → traces → logs
     - Fluxos de investigação (alta latência, erros, debugging)
+- **Variável**: Filtro por serviço (padrão: frontend-service)
 
-### 2. Observability Overview
-- **Localização**: Home (raiz)
+#### 2. Observability Overview
+- **Arquivo**: `dashboards/overview/observability-overview.json`
+- **Localização sugerida**: Home (raiz)
 - **Conteúdo**:
   - Total Request Rate
   - Error Rate (5xx)
@@ -204,8 +218,9 @@ Os seguintes dashboards são criados automaticamente:
   - HTTP Status Codes Distribution
   - Top 10 Endpoints by Request Rate
 
-### 3. Application Monitoring
-- **Localização**: Pasta "Applications"
+#### 3. Application Monitoring
+- **Arquivo**: `dashboards/applications/application-monitoring.json`
+- **Localização sugerida**: Pasta "Applications"
 - **Conteúdo**:
   - Request Rate (filtrado por serviço)
   - Latency (P50, P95, P99)
@@ -213,10 +228,11 @@ Os seguintes dashboards são criados automaticamente:
   - Requests by Status Code
   - Top 10 Endpoints by Request Rate
   - Top 10 Slowest Endpoints (P95)
-- **Variável**: Filtro por serviço (frontend/backend)
+- **Variável**: Filtro por serviço (padrão: frontend-service)
 
-### 4. OpenTelemetry Collector
-- **Localização**: Pasta "Infrastructure"
+#### 4. OpenTelemetry Collector
+- **Arquivo**: `dashboards/infrastructure/otel-collector.json`
+- **Localização sugerida**: Pasta "Infrastructure"
 - **Conteúdo**:
   - Collector Status
   - Spans Received/sec
@@ -243,28 +259,19 @@ Para verificar se foram criados corretamente:
 2. Menu → Connections → Data sources
 3. Todos devem aparecer com status "Working" ✅
 
-### Verificar Dashboards
+### Recriar Datasources
 
-Para verificar se foram criados corretamente:
-1. Acesse Grafana: http://IP_INSTANCIA_1:3000
-2. Menu → Dashboards
-3. Você deve ver:
-   - **Three Pillars Correlation** ⭐ (na raiz) - Dashboard de correlação
-   - **Observability Overview** (na raiz)
-   - Pasta **Applications** com dashboard "Application Monitoring"
-   - Pasta **Infrastructure** com dashboard "OpenTelemetry Collector"
-
-### Recriar Datasources e Dashboards
-
-Se precisar recriar do zero:
+Se precisar recriar os datasources:
 
 ```bash
 # Remover volume do Grafana
 docker compose down
 docker volume rm instancia-1-observability_grafana-data
 
-# Reiniciar (datasources e dashboards serão recriados automaticamente)
+# Reiniciar (datasources serão recriados automaticamente)
 docker compose up -d
+
+# Reimportar dashboards manualmente via UI
 ```
 
 ## Queries de Exemplo
@@ -331,16 +338,11 @@ Provisionamento automático dos data sources:
 - Jaeger (com correlação para Loki e Prometheus)
 - Alertmanager
 
-### grafana-dashboards.yml
-Provisionamento automático dos dashboards:
-- Define pastas e localização dos dashboards JSON
-- Configuração de auto-reload
-
 ### dashboards/
-Diretório com dashboards JSON pré-configurados:
-- **overview/** - Observability Overview (visão geral do sistema)
-- **applications/** - Application Monitoring (métricas das apps)
-- **infrastructure/** - OpenTelemetry Collector (métricas do collector)
+Diretório com dashboards JSON para importação manual:
+- **overview/** - Dashboards de visão geral (Three Pillars Correlation, Observability Overview)
+- **applications/** - Dashboard de monitoramento de aplicações
+- **infrastructure/** - Dashboard de monitoramento do OTel Collector
 
 ### alertmanager.yml
 Configuração do Alertmanager:

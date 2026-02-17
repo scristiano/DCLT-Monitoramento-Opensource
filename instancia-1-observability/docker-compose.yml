@@ -17,12 +17,6 @@ services:
       - grafana-data:/var/lib/grafana
       # Monta arquivo de provisioning de datasources
       - ./grafana-datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml
-      # Monta arquivo de provisioning de dashboards
-      - ./grafana-dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yml
-      # Monta diretórios de dashboards
-      - ./dashboards/overview:/etc/grafana/provisioning/dashboards/overview
-      - ./dashboards/applications:/etc/grafana/provisioning/dashboards/applications
-      - ./dashboards/infrastructure:/etc/grafana/provisioning/dashboards/infrastructure
     networks:
       - observability
     restart: unless-stopped

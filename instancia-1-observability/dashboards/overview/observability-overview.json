@@ -141,7 +141,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "(sum(rate(http_server_duration_milliseconds_count{http_status_code=~\"5..\"}[5m])) / sum(rate(http_server_duration_milliseconds_count[5m]))) * 100",
+          "expr": "((sum(rate(http_server_duration_milliseconds_count{http_status_code=~\"5..\"}[5m])) or vector(0)) / sum(rate(http_server_duration_milliseconds_count[5m]))) * 100",
           "refId": "A"
         }
       ],

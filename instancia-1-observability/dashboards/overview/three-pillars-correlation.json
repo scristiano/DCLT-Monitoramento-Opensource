@@ -457,13 +457,35 @@
           "type": "prometheus",
           "uid": "prometheus"
         },
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": "frontend-service",
+          "value": "frontend-service"
+        },
         "definition": "label_values(http_server_duration_milliseconds_count, service_name)",
         "hide": 0,
         "includeAll": true,
         "label": "Service",
         "multi": true,
         "name": "service",
-        "options": [],
+        "options": [
+          {
+            "selected": false,
+            "text": "All",
+            "value": "$__all"
+          },
+          {
+            "selected": true,
+            "text": "frontend-service",
+            "value": "frontend-service"
+          },
+          {
+            "selected": false,
+            "text": "backend-service",
+            "value": "backend-service"
+          }
+        ],
         "query": {
           "query": "label_values(http_server_duration_milliseconds_count, service_name)",
           "refId": "PrometheusVariableQueryEditor-VariableQuery"
