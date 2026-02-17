@@ -2,6 +2,8 @@
 
 Este cenário demonstra a arquitetura **moderna** onde as aplicações enviam telemetria para um **agente Alloy local**, que processa e encaminha para os backends na Instância 1.
 
+> **📁 Nota sobre a estrutura**: As aplicações (backend, frontend, database) estão no diretório `../app/` e são compartilhadas entre os cenários 1 e 2. Isso evita duplicação de código e facilita a manutenção.
+
 ## Arquitetura
 
 ```
