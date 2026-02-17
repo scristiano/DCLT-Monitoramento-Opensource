@@ -73,10 +73,8 @@ prometheus.remote_write "default" {
     url = "http://OBSERVABILITY_IP:9090/api/v1/write"
 
     queue_config {
-      capacity          = 10000
       max_shards        = 10
       min_shards        = 1
-      max_samples_per_send = 5000
       batch_send_deadline  = "5s"
     }
 
@@ -94,21 +92,13 @@ otelcol.exporter.loki "default" {
 loki.write "default" {
   endpoint {
     url = "http://OBSERVABILITY_IP:3100/loki/api/v1/push"
-
-    queue_config {
-      capacity          = 10000
-      max_shards        = 10
-      min_shards        = 1
-      max_samples_per_send = 5000
-      batch_send_deadline  = "5s"
-    }
   }
 }
 
 // Jaeger Exporter - Send traces to Jaeger
 otelcol.exporter.otlp "jaeger" {
   client {
-    endpoint = "OBSERVABILITY_IP:4318"
+    endpoint = "OBSERVABILITY_IP:4317"
     tls {
       insecure = true
     }
