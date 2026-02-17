@@ -10,7 +10,7 @@ services:
       POSTGRES_PASSWORD: apppass
     volumes:
       - postgres-data:/var/lib/postgresql/data
-      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - ../app/database/init.sql:/docker-entrypoint-initdb.d/init.sql
     networks:
       - app-network
     healthcheck:
@@ -32,7 +32,7 @@ services:
 
   backend:
     build:
-      context: ./backend
+      context: ../app/backend
       dockerfile: Dockerfile
     container_name: backend
     environment:
@@ -53,7 +53,7 @@ services:
 
   frontend:
     build:
-      context: ./frontend
+      context: ../app/frontend
       dockerfile: Dockerfile
     container_name: frontend
     environment:
