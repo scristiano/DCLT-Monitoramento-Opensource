@@ -1,4 +1,5 @@
-require('./tracing');
+const { logger } = require('./tracing');
+const { SeverityNumber } = require('@opentelemetry/api-logs');
 
 const express = require('express');
 const { Pool } = require('pg');
@@ -8,6 +9,28 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 
 app.use(express.json());
+
+// Helper function to emit logs
+function emitLog(severity, message, attributes = {}) {
+  logger.emit({
+    severityNumber: severity,
+    severityText: getSeverityText(severity),
+    body: message,
+    attributes: attributes,
+  });
+  // Also log to console for debugging
+  console.log(message);
+}
+
+function getSeverityText(severityNumber) {
+  const severityMap = {
+    [SeverityNumber.INFO]: 'INFO',
+    [SeverityNumber.WARN]: 'WARN',
+    [SeverityNumber.ERROR]: 'ERROR',
+    [SeverityNumber.DEBUG]: 'DEBUG',
+  };
+  return severityMap[severityNumber] || 'INFO';
+}
 
 // Database connection
 const pool = new Pool({
@@ -27,19 +50,19 @@ const randomDelay = (min, max) => {
 };
 
 app.get('/health', (req, res) => {
-  console.log('Health check requested');
+  emitLog(SeverityNumber.INFO, 'Health check requested');
   res.json({ status: 'healthy', service: 'backend-service' });
 });
 
 app.get('/api/users', async (req, res) => {
-  console.log('Fetching users from database');
+  emitLog(SeverityNumber.INFO, 'Fetching users from database');
   try {
     await randomDelay(10, 100);
     
     // Check cache first
     const cached = await redisClient.get('users');
     if (cached) {
-      console.log('Users found in cache');
+      emitLog(SeverityNumber.INFO, 'Users found in cache');
       return res.json({ source: 'cache', users: JSON.parse(cached) });
     }
     
@@ -50,16 +73,16 @@ app.get('/api/users', async (req, res) => {
     // Cache for 60 seconds
     await redisClient.setEx('users', 60, JSON.stringify(users));
     
-    console.log(`Fetched ${users.length} users from database`);
+    emitLog(SeverityNumber.INFO, `Fetched ${users.length} users from database`, { count: users.length });
     res.json({ source: 'database', users });
   } catch (error) {
-    console.error('Error fetching users:', error);
+    emitLog(SeverityNumber.ERROR, 'Error fetching users', { error: error.message });
     res.status(500).json({ error: error.message });
   }
 });
 
 app.get('/api/orders', async (req, res) => {
-  console.log('Fetching orders from database');
+  emitLog(SeverityNumber.INFO, 'Fetching orders from database');
   try {
     await randomDelay(20, 150);
     
@@ -78,23 +101,23 @@ app.get('/api/orders', async (req, res) => {
       user_name: row.name,
     }));
     
-    console.log(`Fetched ${orders.length} orders from database`);
+    emitLog(SeverityNumber.INFO, `Fetched ${orders.length} orders from database`, { count: orders.length });
     res.json({ orders });
   } catch (error) {
-    console.error('Error fetching orders:', error);
+    emitLog(SeverityNumber.ERROR, 'Error fetching orders', { error: error.message });
     res.status(500).json({ error: error.message });
   }
 });
 
 app.get('/api/products', async (req, res) => {
-  console.log('Fetching products from database');
+  emitLog(SeverityNumber.INFO, 'Fetching products from database');
   try {
     await randomDelay(10, 80);
     
     // Check cache first
     const cached = await redisClient.get('products');
     if (cached) {
-      console.log('Products found in cache');
+      emitLog(SeverityNumber.INFO, 'Products found in cache');
       return res.json({ source: 'cache', products: JSON.parse(cached) });
     }
     
@@ -110,21 +133,21 @@ app.get('/api/products', async (req, res) => {
     // Cache for 120 seconds
     await redisClient.setEx('products', 120, JSON.stringify(products));
     
-    console.log(`Fetched ${products.length} products from database`);
+    emitLog(SeverityNumber.INFO, `Fetched ${products.length} products from database`, { count: products.length });
     res.json({ source: 'database', products });
   } catch (error) {
-    console.error('Error fetching products:', error);
+    emitLog(SeverityNumber.ERROR, 'Error fetching products', { error: error.message });
     res.status(500).json({ error: error.message });
   }
 });
 
 app.post('/api/orders', async (req, res) => {
-  console.log('Creating new order');
+  emitLog(SeverityNumber.INFO, 'Creating new order');
   try {
     const { user_id, total_amount } = req.body;
     
     if (!user_id || !total_amount) {
-      console.log('Missing required fields');
+      emitLog(SeverityNumber.WARN, 'Missing required fields');
       return res.status(400).json({ error: 'Missing required fields' });
     }
     
@@ -140,17 +163,19 @@ app.post('/api/orders', async (req, res) => {
     // Invalidate cache
     await redisClient.del('orders');
     
-    console.log(`Order created with ID: ${order_id}`);
+    emitLog(SeverityNumber.INFO, `Order created with ID: ${order_id}`, { order_id });
     res.status(201).json({ order_id, status: 'created' });
   } catch (error) {
-    console.error('Error creating order:', error);
+    emitLog(SeverityNumber.ERROR, 'Error creating order', { error: error.message });
     res.status(500).json({ error: error.message });
   }
 });
 
 app.listen(PORT, () => {
-  console.log(`Backend service listening on port ${PORT}`);
-  console.log(`Database URL: ${process.env.DATABASE_URL}`);
-  console.log(`Redis URL: ${process.env.REDIS_URL}`);
-  console.log(`OTLP Endpoint: ${process.env.OTEL_EXPORTER_OTLP_ENDPOINT}`);
+  emitLog(SeverityNumber.INFO, `Backend service listening on port ${PORT}`, {
+    port: PORT,
+    database_url: process.env.DATABASE_URL,
+    redis_url: process.env.REDIS_URL,
+    otlp_endpoint: process.env.OTEL_EXPORTER_OTLP_ENDPOINT
+  });
 });
