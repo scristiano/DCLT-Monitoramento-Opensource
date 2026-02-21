@@ -119,10 +119,9 @@ Este cenário demonstra a arquitetura **moderna** onde as aplicações enviam te
 ### Passo 1: Clonar repositório
 
 ```bash
-git clone <repo-url>
-cd <repo-name>
-git checkout aula-06
-cd scenario-2-via-alloy
+git clone -b aula-06 https://github.com/Ed-Carlos-Marinho/PosTech-DevOps-e-Arquitetura-Cloud---Monitoramento-OpenSource.git PosTech
+cd PosTech
+cd cenario-2-via-alloy
 ```
 
 ### Passo 2: Configurar IP da Instância 1
@@ -179,9 +178,9 @@ curl http://localhost:3001/api/products
 
 ### Passo 6: Verificar telemetria no Grafana
 
-1. Acesse Grafana: http://IP_INSTANCIA_1:3000
+1. Acesse Grafana: http://IP_INSTANCIA_1
 2. Login: admin / admin123
-3. Explore → Prometheus → Query: `http_server_request_duration_count`
+3. Explore → Prometheus → Query: `http_server_duration_milliseconds_count`
 4. Explore → Loki → Query: `{service_name="backend-service"}`
 5. Explore → Jaeger → Service: `frontend-service`
 
@@ -399,20 +398,20 @@ docker-compose logs alloy | grep "level=error"
 
 ```promql
 # Requisições por segundo
-rate(http_server_request_duration_count{service_name="frontend-service"}[1m])
+rate(http_server_duration_milliseconds_count{service_name="frontend-service"}[1m])
 
 # Latência P95
 histogram_quantile(0.95, 
-  rate(http_server_request_duration_bucket{service_name="backend-service"}[5m])
+  rate(http_server_duration_milliseconds_bucket{service_name="backend-service"}[5m])
 )
 
 # Taxa de erro
-sum(rate(http_server_request_duration_count{http_status_code=~"5.."}[5m])) 
+sum(rate(http_server_duration_milliseconds_count{http_status_code=~"5.."}[5m])) 
 / 
-sum(rate(http_server_request_duration_count[5m]))
+sum(rate(http_server_duration_milliseconds_count[5m]))
 
 # Verificar atributo do Alloy
-http_server_request_duration_count{telemetry_agent="alloy"}
+http_server_duration_milliseconds_count{telemetry_agent="alloy"}
 ```
 
 ### Logs (Loki)
@@ -572,7 +571,7 @@ curl http://localhost:12345/metrics | grep dropped
 
 ## Próximos Passos
 
-- Comparar com [Cenário 1 - Via Collector](../scenario-1-via-collector/README.md)
+- Comparar com [Cenário 1 - Via Collector](../cenario-1-via-collector/README.md)
 - Ler [Guia do Grafana Alloy](../docs/alloy-guide.md)
 - Customizar processamento no Alloy
 - Configurar alertas baseados em métricas do Alloy
