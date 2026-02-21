@@ -32,9 +32,9 @@ Esta instância contém a **stack completa de observabilidade** que serve **ambo
 
 ## Componentes
 
-### 🎨 Grafana (porta 3000)
+### 🎨 Grafana (porta 80)
 - **Função**: Visualização unificada de métricas, logs e traces
-- **Acesso**: http://IP_INSTANCIA_1:3000
+- **Acesso**: http://IP_INSTANCIA_1
 - **Credenciais**: admin / admin123
 - **Data Sources**: Prometheus, Loki, Jaeger, Alertmanager (provisionados automaticamente)
 
@@ -52,15 +52,22 @@ Esta instância contém a **stack completa de observabilidade** que serve **ambo
 
 ### 🔍 Jaeger (porta 16686)
 - **Função**: Armazenamento e visualização de traces
+### 🔍 Jaeger (porta 16686)
+- **Função**: Armazenamento e visualização de traces
 - **Acesso**: http://IP_INSTANCIA_1:16686
 - **Recebe de**: OTel Collector (Cenário 1) e Alloy (Cenário 2)
-- **Protocolo**: OTLP (portas 4317/4318)
+- **Protocolo OTLP**: 
+  - Porta 4317 (OTLP gRPC) - recebe traces via gRPC
+  - Porta 4318 (OTLP HTTP) - recebe traces via HTTP
 
-### 🔄 OpenTelemetry Collector (porta 4319)
+### 🔄 OpenTelemetry Collector (portas 4319/4320)
 - **Função**: Pipeline central de processamento (usado no Cenário 1)
-- **Acesso**: http://IP_INSTANCIA_1:4319 (OTLP HTTP)
+- **Protocolo OTLP**:
+  - Porta 4319 (OTLP HTTP) - mapeada internamente para 4318
+  - Porta 4320 (OTLP gRPC) - mapeada internamente para 4317
 - **Processa**: Métricas, logs e traces
 - **Exporta para**: Prometheus, Loki, Jaeger
+- **Nota**: As aplicações do Cenário 1 enviam para a porta 4319
 
 ### 🚨 Alertmanager (porta 9093)
 - **Função**: Gerenciamento e roteamento de alertas
@@ -73,7 +80,7 @@ Esta instância contém a **stack completa de observabilidade** que serve **ambo
 ### Pré-requisitos
 
 - Docker e Docker Compose instalados
-- Portas disponíveis: 3000, 3100, 4317, 4318, 4319, 9090, 16686
+- Portas disponíveis: 80, 3100, 4317, 4318, 4319, 4320, 9090, 16686
 - Mínimo 4GB RAM disponível
 - Security Group configurado (ver abaixo)
 
@@ -82,21 +89,25 @@ Esta instância contém a **stack completa de observabilidade** que serve **ambo
 Libere as seguintes portas **INBOUND**:
 
 ```
-Porta 3000  - TCP - 0.0.0.0/0  - Grafana UI
+Porta 80    - TCP - 0.0.0.0/0  - Grafana UI
 Porta 9090  - TCP - 0.0.0.0/0  - Prometheus UI
 Porta 3100  - TCP - VPC CIDR   - Loki (interno)
 Porta 16686 - TCP - 0.0.0.0/0  - Jaeger UI
-Porta 4317  - TCP - VPC CIDR   - OTLP gRPC (interno)
-Porta 4318  - TCP - VPC CIDR   - OTLP HTTP (interno)
-Porta 4319  - TCP - VPC CIDR   - OTel Collector (interno)
+Porta 4317  - TCP - VPC CIDR   - Jaeger OTLP gRPC (interno)
+Porta 4318  - TCP - VPC CIDR   - Jaeger OTLP HTTP (interno)
+Porta 4319  - TCP - VPC CIDR   - OTel Collector OTLP HTTP (interno)
+Porta 4320  - TCP - VPC CIDR   - OTel Collector OTLP gRPC (interno)
 ```
+
+**Nota sobre as portas OTLP:**
+- **Jaeger** (4317/4318): Usado pelo Cenário 2 (Alloy envia traces diretamente)
+- **OTel Collector** (4319/4320): Usado pelo Cenário 1 (Apps enviam para Collector)
 
 ### Passo 1: Clonar repositório
 
 ```bash
-git clone <repo-url>
-cd <repo-name>
-git checkout aula-06
+git clone -b aula-06 https://github.com/Ed-Carlos-Marinho/PosTech-DevOps-e-Arquitetura-Cloud---Monitoramento-OpenSource.git PosTech
+cd PosTech
 cd instancia-1-observability
 ```
 
@@ -134,7 +145,7 @@ curl http://localhost:8888/metrics
 
 ### Passo 4: Acessar interfaces
 
-1. **Grafana**: http://IP_INSTANCIA_1:3000
+1. **Grafana**: http://IP_INSTANCIA_1
    - Usuário: `admin`
    - Senha: `admin123`
 
@@ -176,7 +187,7 @@ Os seguintes dashboards estão disponíveis para importação manual:
 
 ### Como Importar Dashboards
 
-1. Acesse Grafana: http://IP_INSTANCIA_1:3000
+1. Acesse Grafana: http://IP_INSTANCIA_1
 2. Menu → Dashboards → New → Import
 3. Clique em "Upload JSON file"
 4. Selecione um dos arquivos JSON da pasta `dashboards/`
@@ -255,7 +266,7 @@ Os datasources estão configurados para navegação fluida:
 ### Verificar Datasources
 
 Para verificar se foram criados corretamente:
-1. Acesse Grafana: http://IP_INSTANCIA_1:3000
+1. Acesse Grafana: http://IP_INSTANCIA_1
 2. Menu → Connections → Data sources
 3. Todos devem aparecer com status "Working" ✅
 
@@ -369,7 +380,7 @@ docker-compose restart <service-name>
 
 ```bash
 # Verificar portas em uso
-sudo netstat -tulpn | grep -E '3000|9090|3100|16686|4317|4318|4319'
+sudo netstat -tulpn | grep -E '80|9090|3100|16686|4317|4318|4319|4320'
 
 # Parar serviço que está usando a porta
 sudo kill -9 <PID>
@@ -460,8 +471,8 @@ curl -s http://localhost:13133/ | jq .
 
 Após configurar a Instância 1, escolha um cenário para a Instância 2:
 
-- **[Cenário 1 - Via OTel Collector](../scenario-1-via-collector/README.md)**: Mais simples, ideal para começar
-- **[Cenário 2 - Via Alloy](../scenario-2-via-alloy/README.md)**: Mais robusto, ideal para produção
+- **[Cenário 1 - Via OTel Collector](../cenario-1-via-collector/README.md)**: Mais simples, ideal para começar
+- **[Cenário 2 - Via Alloy](../cenario-2-via-alloy/README.md)**: Mais robusto, ideal para produção
 
 ## Recursos Adicionais
 
