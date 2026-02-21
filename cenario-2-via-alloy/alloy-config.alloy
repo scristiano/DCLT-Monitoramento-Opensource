@@ -1,20 +1,40 @@
-// Grafana Alloy Configuration
-// Receives OTLP telemetry from applications and forwards to backends
+// ============================================================================
+// Grafana Alloy Configuration - Cenário 2
+// ============================================================================
+// Este arquivo configura o Grafana Alloy como agente de telemetria unificado.
+// O Alloy substitui o OpenTelemetry Collector, oferecendo uma solução mais leve
+// e integrada ao ecossistema Grafana.
+//
+// Fluxo de dados:
+// 1. Aplicações enviam telemetria via OTLP (HTTP/gRPC)
+// 2. Alloy processa e enriquece os dados
+// 3. Dados são exportados para Prometheus, Loki e Jaeger
+//
+// Portas utilizadas:
+// - 4318: OTLP HTTP
+// - 4317: OTLP gRPC
+// - 12345: Interface web do Alloy (http://localhost:12345)
+// ============================================================================
 
 // ============================================================================
-// OTLP Receivers - Receive telemetry from applications
+// OTLP Receivers - Recepção de Telemetria
 // ============================================================================
+// Recebe métricas, logs e traces das aplicações instrumentadas com OpenTelemetry.
+// Suporta tanto HTTP quanto gRPC para máxima compatibilidade.
 
-// OTLP HTTP Receiver (port 4318)
+// Receptor OTLP - Aceita telemetria em ambos os protocolos
 otelcol.receiver.otlp "default" {
+  // HTTP endpoint - Porta padrão OTLP/HTTP (usado por SDKs web e algumas linguagens)
   http {
     endpoint = "0.0.0.0:4318"
   }
 
+  // gRPC endpoint - Porta padrão OTLP/gRPC (melhor performance, usado por SDKs nativos)
   grpc {
     endpoint = "0.0.0.0:4317"
   }
 
+  // Encaminha todos os sinais para o processador de batch
   output {
     metrics = [otelcol.processor.batch.default.input]
     logs    = [otelcol.processor.batch.default.input]
@@ -23,14 +43,21 @@ otelcol.receiver.otlp "default" {
 }
 
 // ============================================================================
-// Processors - Process and enrich telemetry
+// Processors - Processamento e Enriquecimento de Telemetria
 // ============================================================================
+// Os processadores transformam e enriquecem os dados antes do envio aos backends.
+// Pipeline: Batch → Attributes → Exporters
 
-// Batch Processor - Batch telemetry for efficiency
+// Batch Processor - Agrupa telemetria para otimizar envio
+// Reduz overhead de rede ao enviar dados em lotes ao invés de individualmente
 otelcol.processor.batch "default" {
+  // Tempo máximo de espera antes de enviar um lote (mesmo que incompleto)
   timeout          = "5s"
+  
+  // Número de itens que dispara o envio imediato do lote
   send_batch_size  = 100
 
+  // Encaminha para o processador de atributos
   output {
     metrics = [otelcol.processor.attributes.default.input]
     logs    = [otelcol.processor.attributes.default.input]
@@ -38,78 +65,133 @@ otelcol.processor.batch "default" {
   }
 }
 
-// Attributes Processor - Add common attributes
+// Attributes Processor - Adiciona metadados comuns a toda telemetria
+// Útil para identificar ambiente, agente e outras informações contextuais
 otelcol.processor.attributes "default" {
+  // Adiciona tag de ambiente (útil para filtrar em dashboards)
   action {
     key    = "deployment.environment"
     value  = "production"
     action = "insert"
   }
 
+  // Identifica que a telemetria passou pelo Alloy (útil para troubleshooting)
   action {
     key    = "telemetry.agent"
     value  = "alloy"
     action = "insert"
   }
 
+  // Roteia cada tipo de sinal para seu exportador específico
   output {
-    metrics = [otelcol.exporter.prometheus.default.input]
-    logs    = [otelcol.exporter.loki.default.input]
-    traces  = [otelcol.exporter.otlp.jaeger.input]
+    metrics = [otelcol.exporter.prometheus.default.input]  // Métricas → Prometheus
+    logs    = [otelcol.exporter.loki.default.input]        // Logs → Loki
+    traces  = [otelcol.exporter.otlp.jaeger.input]         // Traces → Jaeger
   }
 }
 
 // ============================================================================
-// Exporters - Send telemetry to backends
+// Exporters - Envio de Telemetria para Backends
 // ============================================================================
+// Cada tipo de sinal é enviado para seu backend especializado:
+// - Métricas → Prometheus (análise de séries temporais)
+// - Logs → Loki (agregação e busca de logs)
+// - Traces → Jaeger (rastreamento distribuído)
 
-// Prometheus Exporter - Send metrics to Prometheus
+// ============================================================================
+// Prometheus Exporter - Métricas
+// ============================================================================
+// Converte métricas OTLP para formato Prometheus e envia via remote_write
+
+// Exportador que converte métricas OTLP para formato Prometheus
 otelcol.exporter.prometheus "default" {
   forward_to = [prometheus.remote_write.default.receiver]
 }
 
+// Remote Write - Envia métricas para Prometheus via API
+// IMPORTANTE: Substitua OBSERVABILITY_IP pelo IP da instância de observabilidade
 prometheus.remote_write "default" {
   endpoint {
     url = "http://OBSERVABILITY_IP:9090/api/v1/write"
 
+    // Configuração de fila para otimizar envio
     queue_config {
-      max_shards        = 10
-      min_shards        = 1
-      batch_send_deadline  = "5s"
+      max_shards        = 10    // Máximo de shards paralelos para envio
+      min_shards        = 1     // Mínimo de shards (escala automaticamente)
+      batch_send_deadline  = "5s"  // Deadline para envio de lotes
     }
 
+    // Configuração de metadados (informações sobre as métricas)
     metadata_config {
-      send_interval = "1m"
+      send_interval = "1m"  // Intervalo de envio de metadados
     }
   }
 }
 
-// Loki Exporter - Send logs to Loki
+// ============================================================================
+// Loki Exporter - Logs
+// ============================================================================
+// Envia logs estruturados para Loki com labels automáticos
+
+// Exportador que converte logs OTLP para formato Loki
 otelcol.exporter.loki "default" {
   forward_to = [loki.write.default.receiver]
 }
 
+// Loki Write - Envia logs para Loki via API push
+// IMPORTANTE: Substitua OBSERVABILITY_IP pelo IP da instância de observabilidade
 loki.write "default" {
   endpoint {
     url = "http://OBSERVABILITY_IP:3100/loki/api/v1/push"
+    // Nota: Loki usa configurações padrão otimizadas, sem necessidade de queue_config
   }
 }
 
-// Jaeger Exporter - Send traces to Jaeger
+// ============================================================================
+// Jaeger Exporter - Traces
+// ============================================================================
+// Envia traces distribuídos para Jaeger via OTLP/gRPC
+
+// Exportador OTLP para Jaeger (usa gRPC para melhor performance)
+// IMPORTANTE: Substitua OBSERVABILITY_IP pelo IP da instância de observabilidade
 otelcol.exporter.otlp "jaeger" {
   client {
-    endpoint = "OBSERVABILITY_IP:4317"
+    endpoint = "OBSERVABILITY_IP:4317"  // Porta gRPC do Jaeger
     tls {
-      insecure = true
+      insecure = true  // Desabilita TLS (apenas para ambientes de desenvolvimento/teste)
     }
   }
 }
 
 // ============================================================================
-// Logging - Alloy internal logging
+// Logging - Configuração de Logs Internos do Alloy
 // ============================================================================
+// Controla como o próprio Alloy registra suas operações e eventos.
+// Útil para troubleshooting e monitoramento do agente.
 
 logging {
-  level  = "info"
-  format = "logfmt"
+  level  = "info"    // Níveis: debug, info, warn, error (use debug para troubleshooting)
+  format = "logfmt"  // Formato: logfmt (legível) ou json (estruturado para parsing)
 }
+
+// ============================================================================
+// Notas de Manutenção
+// ============================================================================
+// 
+// Para aplicar mudanças:
+// 1. Edite este arquivo
+// 2. Reinicie o container: docker-compose restart alloy
+// 3. Verifique logs: docker-compose logs -f alloy
+// 4. Acesse interface web: http://localhost:12345
+//
+// Troubleshooting:
+// - Se métricas não aparecem: verifique conectividade com OBSERVABILITY_IP:9090
+// - Se logs não aparecem: verifique conectividade com OBSERVABILITY_IP:3100
+// - Se traces não aparecem: verifique conectividade com OBSERVABILITY_IP:4317
+// - Use level="debug" no logging para mais detalhes
+//
+// Monitoramento do Alloy:
+// - Interface web: http://localhost:12345
+// - Health check: curl http://localhost:12345/-/ready
+// - Métricas internas: http://localhost:12345/metrics
+// ============================================================================
