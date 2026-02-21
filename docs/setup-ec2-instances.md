@@ -4,7 +4,7 @@ Guia para criar duas instâncias EC2: uma para o stack completo de observabilida
 
 ## Arquitetura da Aula 06
 
-- **Instância 1**: Stack de Observabilidade Completa (t4g.medium - AMD64)
+- **Instância 1**: Stack de Observabilidade Completa (t4g.medium - ARM64)
   - Grafana (visualização unificada de métricas, logs e traces)
   - Prometheus (coleta e armazenamento de métricas)
   - Loki (armazenamento centralizado de logs)
@@ -32,7 +32,7 @@ Guia para criar duas instâncias EC2: uma para o stack completo de observabilida
 - VPC e Subnet configuradas
 
 **Importante sobre as arquiteturas:**
-- **t3.medium** (AMD64): Para stack de observabilidade completa (4GB RAM recomendado)
+- **t4g.medium** (ARM64): Para stack de observabilidade completa (4GB RAM recomendado)
 - **t3.small** (AMD64): Para aplicações instrumentadas (2GB RAM suficiente)
 
 **Novidades da Aula 06:**
@@ -108,13 +108,14 @@ aws iam add-role-to-instance-profile \
 
 **Regras de entrada:**
 - SSH (22) - Source: Seu IP
-- Custom TCP (3000) - Source: 0.0.0.0/0 (Grafana web)
+- Custom TCP (80) - Source: 0.0.0.0/0 (Grafana web)
 - Custom TCP (9090) - Source: 0.0.0.0/0 (Prometheus web)
 - Custom TCP (16686) - Source: 0.0.0.0/0 (Jaeger UI)
 - Custom TCP (3100) - Source: VPC CIDR (Loki API)
-- Custom TCP (4317) - Source: VPC CIDR (OTLP gRPC)
-- Custom TCP (4318) - Source: VPC CIDR (OTLP HTTP)
-- Custom TCP (4319) - Source: VPC CIDR (OTel Collector HTTP)
+- Custom TCP (4317) - Source: VPC CIDR (Jaeger OTLP gRPC)
+- Custom TCP (4318) - Source: VPC CIDR (Jaeger OTLP HTTP)
+- Custom TCP (4319) - Source: VPC CIDR (OTel Collector OTLP HTTP)
+- Custom TCP (4320) - Source: VPC CIDR (OTel Collector OTLP gRPC)
 
 ### Security Group para Aplicações Instrumentadas
 ```bash
@@ -159,7 +160,7 @@ aws iam add-role-to-instance-profile \
 ```bash
 aws ec2 run-instances \
   --image-id ami-0c7217cdde317cfec \
-  --instance-type t3.medium \
+  --instance-type t4g.medium \
   --key-name sua-chave \
   --security-group-ids sg-xxxxxxxxx \
   --subnet-id subnet-xxxxxxxxx \
@@ -177,7 +178,7 @@ aws ec2 run-instances \
 1. **EC2 Dashboard** → **Launch Instance**
 
 2. **Configurações básicas:**
-   - Name: `instrumented-apps-aula06`
+   - Name: `instrumented-apps`
    - AMI: Ubuntu Server 22.04 LTS
    - Instance type: t3.small
    - Key pair: Selecione sua chave
@@ -186,7 +187,7 @@ aws ec2 run-instances \
    - VPC: Mesma da instância de observabilidade
    - Subnet: Mesma ou diferente (mesma AZ recomendada)
    - Auto-assign public IP: Enable
-   - Security group: `instrumented-apps-aula06-sg`
+   - Security group: `instrumented-apps-sg`
 
 4. **Configure storage:**
    - 20 GB gp3
@@ -211,7 +212,7 @@ aws ec2 run-instances \
   --iam-instance-profile Name=PosTech-DevOps-Monitoramento-Profile \
   --user-data file://ec2-userdata/instancia-2.sh \
   --block-device-mappings 'DeviceName=/dev/sda1,Ebs={VolumeSize=20,VolumeType=gp3}' \
-  --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=instrumented-apps-aula06}]'
+  --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=instrumented-apps}]'
 ```
 
 ## Passo 5: Clonar repositório com os arquivos
@@ -225,8 +226,8 @@ cd PosTech
 
 Os arquivos estarão disponíveis:
 - `instancia-1-observability/` - Stack completa de observabilidade
-- `scenario-1-via-collector/` - Cenário 1: Apps → OTel Collector
-- `scenario-2-via-alloy/` - Cenário 2: Apps → Alloy → Backends
+- `cenario-1-via-collector/` - Cenário 1: Apps → OTel Collector
+- `cenario-2-via-alloy/` - Cenário 2: Apps → Alloy → Backends
 - `ec2-userdata/instancia-1.sh` - Script para instância de observabilidade
 - `ec2-userdata/instancia-2.sh` - Script para instância de aplicações
 - `docs/` - Documentação completa (7 guias)
@@ -256,7 +257,7 @@ docker-compose ps
 ```
 
 ### Acessar interfaces
-- **Grafana**: `http://IP_OBSERVABILITY_SERVER:3000` (admin/admin123)
+- **Grafana**: `http://IP_OBSERVABILITY_SERVER` (admin/admin123)
 - **Prometheus**: `http://IP_OBSERVABILITY_SERVER:9090`
 - **Jaeger UI**: `http://IP_OBSERVABILITY_SERVER:16686`
 - **Loki**: `http://IP_OBSERVABILITY_SERVER:3100` (API - sem interface web)
@@ -281,11 +282,11 @@ sudo tail -f /var/log/cloud-init-output.log
 cd /home/ubuntu/PosTech-DevOps-e-Arquitetura-Cloud---Monitoramento-OpenSource
 
 # Cenário 1
-cd scenario-1-via-collector
+cd cenario-1-via-collector
 docker-compose ps
 
 # OU Cenário 2
-cd scenario-2-via-alloy
+cd cenario-2-via-alloy
 docker-compose ps
 
 # Testar frontend
@@ -302,14 +303,14 @@ curl http://localhost:5000/api/users
 # Exemplo: 10.0.1.100
 
 # Cenário 1: Configurar IP no docker-compose
-cd scenario-1-via-collector
+cd cenario-1-via-collector
 export OBSERVABILITY_IP="10.0.1.100"
 sed -i "s/OBSERVABILITY_IP/${OBSERVABILITY_IP}/g" docker-compose.yml
 docker-compose down
 docker-compose up -d
 
 # Cenário 2: Configurar IP no Alloy config
-cd scenario-2-via-alloy
+cd cenario-2-via-alloy
 export OBSERVABILITY_IP="10.0.1.100"
 sed -i "s/OBSERVABILITY_IP/${OBSERVABILITY_IP}/g" alloy-config.alloy
 docker-compose down
@@ -324,7 +325,7 @@ docker-compose up -d
 3. **Verificar** se OTel Collector está "UP"
 
 ### Configurar Data Sources no Grafana
-1. **Acessar Grafana**: `http://IP_OBSERVABILITY_SERVER:3000` (admin/admin123)
+1. **Acessar Grafana**: `http://IP_OBSERVABILITY_SERVER` (admin/admin123)
 2. **Configuration** → **Data Sources** → **Add data source**
 
 #### Configurar Prometheus
@@ -393,18 +394,18 @@ done
 4. **Analisar**: Spans, duração, tags e eventos
 
 ### Correlacionar traces com logs no Grafana
-1. **Acessar Grafana**: `http://IP_OBSERVABILITY_SERVER:3000`
+1. **Acessar Grafana**: `http://IP_OBSERVABILITY_SERVER`
 2. **Explore** → **Loki**
 3. **Consulta**: `{service_name="backend-service"} |= "trace_id"`
 4. **Copiar trace_id** de um log
 5. **Jaeger** → **Buscar pelo trace_id específico**
 
 ### Visualizar métricas no Prometheus
-1. **Acessar Grafana**: `http://IP_OBSERVABILITY_SERVER:3000`
+1. **Acessar Grafana**: `http://IP_OBSERVABILITY_SERVER`
 2. **Explore** → **Prometheus**
 3. **Consultas**:
-   - `rate(http_server_request_duration_count[1m])` - Requisições por segundo
-   - `histogram_quantile(0.95, rate(http_server_request_duration_bucket[5m]))` - Latência P95
+   - `rate(http_server_duration_milliseconds_count[1m])` - Requisições por segundo
+   - `histogram_quantile(0.95, rate(http_server_duration_milliseconds_bucket[5m]))` - Latência P95
 
 ## Passo 10: Comparar Cenários
 
@@ -436,7 +437,7 @@ curl http://localhost:12345/metrics | grep alloy_otelcol_receiver_accepted
 ## Passo 11: Endpoints e Interfaces Disponíveis
 
 ### Instância de Observabilidade (IP_OBSERVABILITY_SERVER)
-- **Grafana**: `http://IP:3000` (admin/admin123)
+- **Grafana**: `http://IP` (admin/admin123)
 - **Prometheus**: `http://IP:9090`
 - **Jaeger UI**: `http://IP:16686`
 - **Loki API**: `http://IP:3100` (sem interface web)
@@ -492,13 +493,13 @@ docker-compose ps
 docker-compose logs otel-collector
 
 # Verificar aplicações - Cenário 1
-cd scenario-1-via-collector
+cd cenario-1-via-collector
 docker-compose ps
 docker-compose logs frontend
 docker-compose logs backend
 
 # Verificar aplicações - Cenário 2
-cd scenario-2-via-alloy
+cd cenario-2-via-alloy
 docker-compose ps
 docker-compose logs alloy
 docker-compose logs frontend

@@ -4,46 +4,88 @@ Este repositório contém os materiais da **Aula 06** do módulo **Monitoramento
 
 ## Visão Geral
 
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                    INSTÂNCIA 1 (Observabilidade)                    │
-│                         ★ ÚNICA PARA AMBOS ★                        │
-│                                                                     │
-│  ┌──────────┐  ┌────────────┐  ┌──────┐  ┌────────┐  ┌──────────┐ │
-│  │ Grafana  │  │ Prometheus │  │ Loki │  │ Jaeger │  │OTel Coll.│ │
-│  │  :3000   │  │   :9090    │  │:3100 │  │ :16686 │  │  :4319   │ │
-│  └────┬─────┘  └─────┬──────┘  └───┬──┘  └────┬───┘  └────┬─────┘ │
-│       └──────────────┼──────────────┼──────────┼───────────┘       │
-└───────────────────────┼──────────────┼──────────┼───────────────────┘
-                        │              │          │
-        ┌───────────────┴──────────────┴──────────┴───────────┐
-        │                                                      │
-        ▼                                                      ▼
-┌─────────────────────────────────┐    ┌─────────────────────────────────┐
-│  CENÁRIO 1 (Instância 2)        │    │  CENÁRIO 2 (Instância 2)        │
-│  Via OpenTelemetry Collector    │    │  Via Grafana Alloy              │
-│                                 │    │                                 │
-│  ┌──────────┐  ┌──────────┐    │    │  ┌──────────┐  ┌──────────┐    │
-│  │ Frontend │  │ Backend  │    │    │  │ Frontend │  │ Backend  │    │
-│  │ + OTel   │  │ + OTel   │    │    │  │ + OTel   │  │ + OTel   │    │
-│  └────┬─────┘  └────┬─────┘    │    │  └────┬─────┘  └────┬─────┘    │
-│       │             │           │    │       │             │           │
-│       │ OTLP        │ OTLP      │    │       │ OTLP        │ OTLP      │
-│       │ (direto)    │ (direto)  │    │       │ (local)     │ (local)   │
-│       └─────────────┴───────────┼──┐ │       └─────────────┴───────┐   │
-│                                 │  │ │                             │   │
-│                                 │  │ │                      ┌──────▼───┴┐
-│                                 │  │ │                      │   Alloy   │
-│                                 │  │ │                      │  (Agent)  │
-│                                 │  │ │                      └──────┬────┘
-└─────────────────────────────────┘  │ └─────────────────────────────┼────┘
-                                     │                               │
-                                     └───────────────────────────────┘
-```
+Este projeto demonstra duas arquiteturas de observabilidade com OpenTelemetry em ambiente AWS:
+
+![Arquitetura Macro](docs/images/arquitetura-macro.jpg)
+
+### 🏗️ Componentes Principais
+
+**☁️ AWS Cloud - VPC**
+
+**📊 Instância 1 - Stack de Observabilidade (Única)**
+- **Grafana** (:80) - Visualização unificada de métricas, logs e traces
+- **Prometheus** (:9090) - Armazenamento e consulta de métricas
+- **Loki** (:3100) - Armazenamento e consulta de logs
+- **Jaeger** (:16686) - Armazenamento e visualização de traces
+  - OTLP gRPC: porta 4317
+  - OTLP HTTP: porta 4318
+- **OpenTelemetry Collector** (:4319/:4320) - Pipeline central de processamento
+  - OTLP HTTP: porta 4319 (usado pelo Cenário 1)
+  - OTLP gRPC: porta 4320
+
+**💻 Instância 2A - Cenário 1 (Via OTel Collector)**
+- Frontend (Node.js + Express) + Backend (Python + Flask)
+- PostgreSQL + Redis
+- Envia telemetria **diretamente** para OTel Collector
+
+**💻 Instância 2B - Cenário 2 (Via Grafana Alloy)**
+- Frontend (Node.js + Express) + Backend (Python + Flask)
+- PostgreSQL + Redis
+- **Grafana Alloy** - Agente local de processamento
+- Envia telemetria via **Alloy** (batch otimizado)
+
+### 🔄 Fluxos de Dados
+
+- **Usuários** → Acessam aplicações via HTTP
+- **Cenário 1** → Apps enviam OTLP direto para Collector (:4319)
+- **Cenário 2** → Apps enviam OTLP para Alloy local → Alloy envia batch para backends
+- **Visualização** → Usuários acessam Grafana para dashboards unificados
+
+### 📊 Diagramas Detalhados por Cenário
+
+Veja os diagramas específicos de cada cenário na seção [Diagramas de Arquitetura](#diagramas-de-arquitetura) abaixo.
+
+## Diagramas de Arquitetura
+
+### 📊 Cenário 1 - Via OpenTelemetry Collector
+![Arquitetura Cenário 1](docs/images/arquitetura-cenario-1-collector.jpg)
+
+### 🚀 Cenário 2 - Via Grafana Alloy
+![Arquitetura Cenário 2](docs/images/arquitetura-cenario-2-alloy.jpg)
+
+### 🔄 Fluxo Completo de Telemetria
+![Fluxo de Telemetria](docs/images/fluxo-telemetria-completo.jpg)
 
 ## Conteúdo da Branch aula-06
 
 Esta aula apresenta **2 cenários** de implementação de telemetria unificada com OpenTelemetry.
+
+### 📁 Estrutura do Projeto
+
+```
+.
+├── app/                              # 🎯 Aplicação compartilhada (backend, frontend, database)
+├── cenario-1-via-collector/          # Cenário 1: Via OTel Collector
+│   ├── docker-compose.yml
+│   └── README.md
+├── cenario-2-via-alloy/              # Cenário 2: Via Grafana Alloy
+│   ├── alloy-config.alloy
+│   ├── docker-compose.yml
+│   └── README.md
+├── instancia-1-observability/        # Stack de observabilidade
+│   ├── dashboards/                   # Dashboards Grafana (importação manual)
+│   ├── docker-compose.yml
+│   ├── grafana-datasources.yml       # Provisionamento automático
+│   ├── otel-collector-config.yml
+│   ├── prometheus.yml
+│   ├── loki-config.yml
+│   ├── alertmanager.yml
+│   └── README.md
+├── ec2-userdata/                     # Scripts de inicialização EC2
+└── docs/                             # Documentação e guias
+```
+
+**Nota importante**: O diretório `app/` contém a aplicação demo (backend, frontend, database) que é **compartilhada** entre os dois cenários. Isso evita duplicação de código e facilita a manutenção.
 
 ### 🏢 Instância 1 - Stack de Observabilidade (Única para ambos cenários)
 
@@ -94,14 +136,14 @@ Mesmas aplicações instrumentadas com OpenTelemetry, mas com diferentes formas 
 │   ├── loki-config.yml                    # Configuração do Loki
 │   └── grafana-datasources.yml            # Data sources do Grafana
 │
-├── scenario-1-via-collector/              # 📦 CENÁRIO 1 (Instância 2)
+├── cenario-1-via-collector/              # 📦 CENÁRIO 1 (Instância 2)
 │   ├── README.md                          # Guia do cenário 1
 │   ├── docker-compose.yml                 # Apps enviando para Collector
 │   ├── frontend/                          # Frontend com OTel SDK
 │   ├── backend/                           # Backend com OTel SDK
 │   └── database/                          # Scripts do banco
 │
-├── scenario-2-via-alloy/                  # 🚀 CENÁRIO 2 (Instância 2)
+├── cenario-2-via-alloy/                  # 🚀 CENÁRIO 2 (Instância 2)
 │   ├── README.md                          # Guia do cenário 2
 │   ├── docker-compose.yml                 # Apps + Alloy
 │   ├── alloy-config.alloy                 # Configuração do Alloy
@@ -130,6 +172,10 @@ Mesmas aplicações instrumentadas com OpenTelemetry, mas com diferentes formas 
 Esta instância é **única** e serve ambos os cenários.
 
 ```bash
+# Clonar repositório (se ainda não clonou)
+git clone -b aula-06 https://github.com/Ed-Carlos-Marinho/PosTech-DevOps-e-Arquitetura-Cloud---Monitoramento-OpenSource.git PosTech
+cd PosTech
+
 # Na Instância 1 (EC2)
 cd instancia-1-observability
 
@@ -140,7 +186,7 @@ docker-compose up -d
 docker-compose ps
 
 # Acessar interfaces
-# - Grafana: http://IP_INSTANCIA_1:3000 (admin/admin123)
+# - Grafana: http://IP_INSTANCIA_1 (admin/admin123)
 # - Prometheus: http://IP_INSTANCIA_1:9090
 # - Loki: http://IP_INSTANCIA_1:3100
 # - Jaeger UI: http://IP_INSTANCIA_1:16686
@@ -161,7 +207,7 @@ Aplicações enviam telemetria diretamente para o OTel Collector.
 
 ```bash
 # Na Instância 2 (EC2)
-cd scenario-1-via-collector
+cd PosTech/cenario-1-via-collector
 
 # Configurar IP da Instância 1
 export OBSERVABILITY_IP="IP_PRIVADO_INSTANCIA_1"
@@ -174,7 +220,7 @@ docker-compose up -d
 curl http://localhost:3001/api/users
 ```
 
-[Ver guia completo do Cenário 1](scenario-1-via-collector/README.md)
+[Ver guia completo do Cenário 1](cenario-1-via-collector/README.md)
 
 #### 🚀 **Cenário 2: Via Grafana Alloy**
 
@@ -182,7 +228,7 @@ Aplicações enviam telemetria para Alloy local, que processa e envia para backe
 
 ```bash
 # Na Instância 2 (EC2)
-cd scenario-2-via-alloy
+cd PosTech/cenario-2-via-alloy
 
 # Configurar IP da Instância 1
 export OBSERVABILITY_IP="IP_PRIVADO_INSTANCIA_1"
@@ -195,14 +241,14 @@ docker-compose up -d
 curl http://localhost:3001/api/users
 ```
 
-[Ver guia completo do Cenário 2](scenario-2-via-alloy/README.md)
+[Ver guia completo do Cenário 2](cenario-2-via-alloy/README.md)
 
 ---
 
 ### 📊 Passo 3: Visualizar no Grafana
 
 Acesse o Grafana na Instância 1:
-- URL: `http://IP_INSTANCIA_1:3000`
+- URL: `http://IP_INSTANCIA_1`
 - Usuário: `admin`
 - Senha: `admin123`
 
@@ -234,12 +280,12 @@ Acesse o Grafana na Instância 1:
 **Iniciante - Nunca usei OpenTelemetry:**
 1. [Guia de OpenTelemetry](docs/opentelemetry-guide.md) - Conceitos fundamentais
 2. [Setup da Instância 1](instancia-1-observability/README.md) - Configurar observabilidade
-3. [Cenário 1](scenario-1-via-collector/README.md) - Começar pelo mais simples
+3. [Cenário 1](cenario-1-via-collector/README.md) - Começar pelo mais simples
 
 **Intermediário - Já conheço OTel:**
 1. [Setup da Instância 1](instancia-1-observability/README.md)
 2. [Comparação de Cenários](docs/comparison-scenarios.md) - Escolher cenário
-3. [Cenário 2](scenario-2-via-alloy/README.md) - Implementar com Alloy
+3. [Cenário 2](cenario-2-via-alloy/README.md) - Implementar com Alloy
 
 **Avançado - Quero entender tudo:**
 1. [Guia de OpenTelemetry](docs/opentelemetry-guide.md)
@@ -261,8 +307,8 @@ Acesse o Grafana na Instância 1:
 
 ### 🏢 Setup por Instância
 - [Instância 1 - Observabilidade](instancia-1-observability/README.md) - Stack única
-- [Cenário 1 - Via Collector](scenario-1-via-collector/README.md) - Instância 2
-- [Cenário 2 - Via Alloy](scenario-2-via-alloy/README.md) - Instância 2
+- [Cenário 1 - Via Collector](cenario-1-via-collector/README.md) - Instância 2
+- [Cenário 2 - Via Alloy](cenario-2-via-alloy/README.md) - Instância 2
 
 ## Objetivo da Aula
 
@@ -298,3 +344,45 @@ Explorar o ecossistema OpenTelemetry (OTel) e comparar duas abordagens de coleta
 - Ideal para: produção, muitos serviços, alta disponibilidade
 
 [Ver comparação detalhada](docs/comparison-scenarios.md)
+
+## 🔧 Troubleshooting
+
+### Problemas Comuns
+
+1. **Aplicações não foram iniciadas** - Os cenários no script `ec2-userdata/instancia-2.sh` estão comentados
+2. **IP não configurado** - Placeholder `OBSERVABILITY_IP` não foi substituído
+3. **Containers não estão rodando** - Verificar com `docker-compose ps`
+4. **Firewall bloqueando** - Security Groups não permitem comunicação entre instâncias
+5. **Nomes de diretórios** - Script usa nomes antigos (`scenario-*` ao invés de `cenario-*`)
+
+### Verificação Rápida
+
+```bash
+# Na Instância 2 - Verificar se aplicações estão rodando
+docker-compose ps
+
+# Testar endpoints
+curl http://localhost:3001/health
+curl http://localhost:5000/health
+
+# Ver logs
+docker-compose logs -f
+
+# Na Instância 1 - Verificar se Collector está recebendo dados
+curl http://localhost:8888/metrics | grep otelcol_receiver_accepted_spans_total
+```
+
+### Script Corrigido
+
+Se você está criando novas instâncias, use o script corrigido:
+- 📄 `ec2-userdata/instancia-2-fixed.sh` - Versão com correções aplicadas
+
+### Queries de Verificação no Prometheus
+
+```promql
+# Verificar se OTel Collector está recebendo spans
+otelcol_receiver_accepted_spans_total
+
+# Verificar requisições HTTP das aplicações
+rate(http_server_duration_milliseconds_count[5m])
+```

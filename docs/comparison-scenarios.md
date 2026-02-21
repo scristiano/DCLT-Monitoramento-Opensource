@@ -433,5 +433,5 @@ docker-compose up -d --scale backend=3
 - [Guia de OpenTelemetry](./opentelemetry-guide.md)
 - [Guia do OTel Collector](./otel-collector-guide.md)
 - [Guia do Grafana Alloy](./alloy-guide.md)
-- [Cenário 1 - README](../scenario-1-via-collector/README.md)
-- [Cenário 2 - README](../scenario-2-via-alloy/README.md)
+- [Cenário 1 - README](../cenario-1-via-collector/README.md)
+- [Cenário 2 - README](../cenario-2-via-alloy/README.md)

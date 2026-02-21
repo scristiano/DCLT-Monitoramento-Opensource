@@ -120,14 +120,14 @@ git checkout aula-06
 # ESCOLHER UM CENÁRIO:
 
 # Cenário 1: Via OpenTelemetry Collector
-cd scenario-1-via-collector
+cd cenario-1-via-collector
 sed -i "s/OBSERVABILITY_IP/${OBSERVABILITY_IP}/g" docker-compose.yml
 docker-compose up -d
 
 # OU
 
 # Cenário 2: Via Grafana Alloy
-cd scenario-2-via-alloy
+cd cenario-2-via-alloy
 sed -i "s/OBSERVABILITY_IP/${OBSERVABILITY_IP}/g" alloy-config.alloy
 docker-compose up -d
 
@@ -169,12 +169,12 @@ No script, **comente** o cenário que NÃO quer usar:
 **Para usar Cenário 1**:
 ```bash
 # Cenário 1: Via OpenTelemetry Collector
-cd scenario-1-via-collector
+cd cenario-1-via-collector
 sed -i "s/OBSERVABILITY_IP/${OBSERVABILITY_IP}/g" docker-compose.yml
 docker-compose up -d
 
 # Cenário 2: Via Grafana Alloy (COMENTADO)
-# cd scenario-2-via-alloy
+# cd cenario-2-via-alloy
 # sed -i "s/OBSERVABILITY_IP/${OBSERVABILITY_IP}/g" alloy-config.alloy
 # docker-compose up -d
 ```
@@ -182,12 +182,12 @@ docker-compose up -d
 **Para usar Cenário 2**:
 ```bash
 # Cenário 1: Via OpenTelemetry Collector (COMENTADO)
-# cd scenario-1-via-collector
+# cd cenario-1-via-collector
 # sed -i "s/OBSERVABILITY_IP/${OBSERVABILITY_IP}/g" docker-compose.yml
 # docker-compose up -d
 
 # Cenário 2: Via Grafana Alloy
-cd scenario-2-via-alloy
+cd cenario-2-via-alloy
 sed -i "s/OBSERVABILITY_IP/${OBSERVABILITY_IP}/g" alloy-config.alloy
 docker-compose up -d
 ```
@@ -307,13 +307,13 @@ docker-compose up -d
 
 ```bash
 # Instância 2 - Cenário 1
-cd /home/ubuntu/<REPO_NAME>/scenario-1-via-collector
+cd /home/ubuntu/<REPO_NAME>/cenario-1-via-collector
 export OBSERVABILITY_IP="IP_CORRETO"
 sed -i "s/OBSERVABILITY_IP/${OBSERVABILITY_IP}/g" docker-compose.yml
 docker-compose restart
 
 # Instância 2 - Cenário 2
-cd /home/ubuntu/<REPO_NAME>/scenario-2-via-alloy
+cd /home/ubuntu/<REPO_NAME>/cenario-2-via-alloy
 export OBSERVABILITY_IP="IP_CORRETO"
 sed -i "s/OBSERVABILITY_IP/${OBSERVABILITY_IP}/g" alloy-config.alloy
 docker-compose restart alloy
