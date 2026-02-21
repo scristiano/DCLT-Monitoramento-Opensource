@@ -106,10 +106,9 @@ Este cenário demonstra a arquitetura **tradicional** onde as aplicações envia
 ### Passo 1: Clonar repositório
 
 ```bash
-git clone <repo-url>
-cd <repo-name>
-git checkout aula-06
-cd scenario-1-via-collector
+git clone -b aula-06 https://github.com/Ed-Carlos-Marinho/PosTech-DevOps-e-Arquitetura-Cloud---Monitoramento-OpenSource.git PosTech
+cd PosTech
+cd cenario-1-via-collector
 ```
 
 ### Passo 2: Configurar IP da Instância 1
@@ -153,9 +152,9 @@ curl http://localhost:3001/api/products
 
 ### Passo 5: Verificar telemetria no Grafana
 
-1. Acesse Grafana: http://IP_INSTANCIA_1:3000
+1. Acesse Grafana: http://IP_INSTANCIA_1
 2. Login: admin / admin123
-3. Explore → Prometheus → Query: `http_server_request_duration_count`
+3. Explore → Prometheus → Query: `http_server_duration_milliseconds_count`
 4. Explore → Loki → Query: `{service_name="backend-service"}`
 5. Explore → Jaeger → Service: `frontend-service`
 
@@ -289,17 +288,17 @@ CMD ["opentelemetry-instrument", "python", "app.py"]
 
 ```promql
 # Requisições por segundo
-rate(http_server_request_duration_count{service_name="frontend-service"}[1m])
+rate(http_server_duration_milliseconds_count{service_name="frontend-service"}[1m])
 
 # Latência P95
 histogram_quantile(0.95, 
-  rate(http_server_request_duration_bucket{service_name="backend-service"}[5m])
+  rate(http_server_duration_milliseconds_bucket{service_name="backend-service"}[5m])
 )
 
 # Taxa de erro
-sum(rate(http_server_request_duration_count{http_status_code=~"5.."}[5m])) 
+sum(rate(http_server_duration_milliseconds_count{http_status_code=~"5.."}[5m])) 
 / 
-sum(rate(http_server_request_duration_count[5m]))
+sum(rate(http_server_duration_milliseconds_count[5m]))
 ```
 
 ### Logs (Loki)
@@ -440,7 +439,7 @@ hey -n 1000 -c 10 http://localhost:5000/api/users
 
 ## Próximos Passos
 
-- Explorar [Cenário 2 - Via Alloy](../scenario-2-via-alloy/README.md)
+- Explorar [Cenário 2 - Via Alloy](../cenario-2-via-alloy/README.md)
 - Ler [Guia de Instrumentação](../docs/instrumentation-otel.md)
 - Criar dashboards customizados no Grafana
 - Configurar alertas no Prometheus
