@@ -82,18 +82,83 @@ chmod +x /usr/local/bin/docker-compose       # Torna executável
 check_status "Instalação do Docker Compose"
 
 # =============================================================================
-# FASE 5: CLONAGEM DO REPOSITÓRIO
+# FASE 5: INSTALAÇÃO DO CODE-SERVER
+# =============================================================================
+
+# Instalação do Code-server
+echo "💻 Instalando code-server..."
+curl -fsSL https://code-server.dev/install.sh | sh
+check_status "Instalação do code-server"
+
+sleep 3
+if [ ! -f /usr/bin/code-server ]; then
+    echo "❌ Code-server não foi instalado corretamente"
+    exit 1
+fi
+
+# Criação de usuário para code-server
+echo "👤 Criando usuário dedicado para code-server..."
+useradd -m -s /bin/bash -c "Code Server User" codeserver
+usermod -a -G docker codeserver
+check_status "Criação do usuário codeserver"
+
+# Configuração do code-server
+echo "⚙️ Configurando code-server..."
+mkdir -p /home/codeserver/.config/code-server
+
+cat > /home/codeserver/.config/code-server/config.yaml << 'EOF'
+bind-addr: 0.0.0.0:8080
+auth: password
+password: demo123
+cert: false
+EOF
+
+chown -R codeserver:codeserver /home/codeserver/.config
+check_status "Configuração do code-server"
+
+# Criação do serviço systemd
+echo "🔧 Criando serviço systemd..."
+cat > /etc/systemd/system/code-server.service << 'EOF'
+[Unit]
+Description=Code Server - VS Code in Browser
+After=network.target
+
+[Service]
+Type=simple
+User=codeserver
+Group=codeserver
+WorkingDirectory=/home/codeserver
+Environment=HOME=/home/codeserver
+Environment=XDG_CONFIG_HOME=/home/codeserver/.config
+Environment=XDG_DATA_HOME=/home/codeserver/.local/share
+ExecStart=/usr/bin/code-server --config /home/codeserver/.config/code-server/config.yaml
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# Inicialização do code-server
+echo "🚀 Iniciando code-server..."
+systemctl daemon-reload
+systemctl enable code-server
+systemctl start code-server
+check_status "Inicialização do code-server"
+
+# =============================================================================
+# FASE 6: CLONAGEM DO REPOSITÓRIO
 # =============================================================================
 
 echo "📥 Clonando repositório..."
 cd /home/ubuntu
-git clone -b aula-06 https://github.com/Ed-Carlos-Marinho/PosTech-DevOps-e-Arquitetura-Cloud---Monitoramento-OpenSource.git repo
-cd repo
-chown -R ubuntu:ubuntu /home/ubuntu/repo
+git clone -b aula-06 https://github.com/Ed-Carlos-Marinho/PosTech-DevOps-e-Arquitetura-Cloud---Monitoramento-OpenSource.git PosTech
+cd PosTech
+chown -R ubuntu:ubuntu /home/codeserver/PosTech
 check_status "Clonagem do repositório"
 
 # =============================================================================
-# FASE 6: CONFIGURAÇÃO E INICIALIZAÇÃO DA STACK
+# FASE 7: CONFIGURAÇÃO E INICIALIZAÇÃO DA STACK
 # =============================================================================
 
 echo "🚀 Iniciando stack de aplicações instrumentadas..."
@@ -112,7 +177,7 @@ echo "🚀 Iniciando stack de aplicações instrumentadas..."
 check_status "Inicialização da stack de aplicações instrumentadas"
 
 # =============================================================================
-# FASE 7: CONFIGURAÇÃO DO FIREWALL
+# FASE 8: CONFIGURAÇÃO DO FIREWALL
 # =============================================================================
 
 echo "🔥 Configurando firewall..."
@@ -121,15 +186,17 @@ ufw allow ssh                               # Permite SSH (porta 22)
 ufw allow 3001                              # Permite Frontend
 ufw allow 5000                              # Permite Backend API
 ufw allow 12345                             # Permite Alloy UI (Cenário 2)
+ufw allow 8080                              # Permite Code-server
 check_status "Configuração do firewall"
 
 # =============================================================================
-# FASE 8: VERIFICAÇÃO FINAL
+# FASE 9: VERIFICAÇÃO FINAL
 # =============================================================================
 
 echo "🔍 Verificando status dos serviços..."
 # Verifica se serviços estão ativos e reporta status
 systemctl is-active docker && echo "✅ Docker está rodando"
+systemctl is-active code-server && echo "✅ Code-server está rodando"
 
 # =============================================================================
 # FINALIZAÇÃO E INFORMAÇÕES DE ACESSO
@@ -141,6 +208,8 @@ echo "🚀 Serviços instalados e configurados:"
 echo "   - Frontend: http://$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4):3001"
 echo "   - Backend API: http://$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4):5000"
 echo "   - Alloy UI (Cenário 2): http://$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4):12345"
+echo "   - Code-server: http://$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4):8080"
+echo "   - Senha Code-server: demo123"
 echo ""
 echo "⚠️  PRÓXIMOS PASSOS MANUAIS:"
 echo "   1. Obter IP privado da instância de observabilidade (Instância 1)"
@@ -157,7 +226,7 @@ echo "   - Testar backend: curl http://localhost:5000/health"
 echo "   - Listar usuários: curl http://localhost:3001/api/users"
 echo "   - Listar produtos: curl http://localhost:3001/api/products"
 echo "   - Criar pedido: curl -X POST http://localhost:3001/api/orders -H 'Content-Type: application/json' -d '{\"user_id\":1,\"total_amount\":99.99}'"
-echo "   - Ver logs da stack: cd ~/repo/[cenario] && docker-compose logs -f"
+echo "   - Ver logs da stack: cd ~/PosTech/[cenario] && docker-compose logs -f"
 echo "   - Status da stack: docker-compose ps"
 echo "   - Verificar Alloy (Cenário 2): curl http://localhost:12345/metrics"
 echo "   - Logs de instalação: sudo tail -f /var/log/user-data.log"
@@ -172,11 +241,11 @@ echo "   - Logs de instalação: sudo tail -f /var/log/user-data.log"
 # - Logs específicos: docker-compose logs [service]
 #
 # ARQUIVOS DE CONFIGURAÇÃO:
-# - Cenário 1: ~/repo/scenario-1-via-collector/docker-compose.yml
-# - Cenário 2: ~/repo/scenario-2-via-alloy/docker-compose.yml
-# - Cenário 2: ~/repo/scenario-2-via-alloy/alloy-config.alloy
-# - Frontend: ~/repo/[cenario]/frontend/
-# - Backend: ~/repo/[cenario]/backend/
+# - Cenário 1: ~/PosTech/scenario-1-via-collector/docker-compose.yml
+# - Cenário 2: ~/PosTech/scenario-2-via-alloy/docker-compose.yml
+# - Cenário 2: ~/PosTech/scenario-2-via-alloy/alloy-config.alloy
+# - Frontend: ~/PosTech/[cenario]/frontend/
+# - Backend: ~/PosTech/[cenario]/backend/
 #
 # PORTAS UTILIZADAS:
 # - 22: SSH
