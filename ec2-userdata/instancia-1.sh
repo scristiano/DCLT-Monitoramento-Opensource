@@ -140,7 +140,7 @@ echo "📊 PRÓXIMOS PASSOS PARA AULA 06:"
 echo "1. Clonar repositório: git clone -b aula-06 https://github.com/Ed-Carlos-Marinho/PosTech-DevOps-e-Arquitetura-Cloud---Monitoramento-OpenSource.git"
 echo "2. Executar stack de observabilidade: cd instancia-1-observability && docker-compose up -d"
 echo "3. Acessar interfaces:"
-echo "   - Grafana: http://$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4):3000 (admin/admin123)"
+echo "   - Grafana: http://$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4) (admin/admin123)"
 echo "   - Prometheus: http://$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4):9090"
 echo "   - Loki: http://$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4):3100"
 echo "   - Jaeger UI: http://$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4):16686"
@@ -155,7 +155,7 @@ echo "🔧 Sistema pronto para OpenTelemetry e telemetria unificada"
 # INFORMAÇÕES IMPORTANTES:
 # 
 # STACK DE OBSERVABILIDADE: 
-# - Grafana (3000): Visualização unificada
+# - Grafana (80): Visualização unificada
 # - Prometheus (9090): Métricas
 # - Loki (3100): Logs
 # - Jaeger (16686): Traces distribuídos

@@ -158,29 +158,10 @@ chown -R ubuntu:ubuntu /home/codeserver/PosTech
 check_status "Clonagem do repositório"
 
 # =============================================================================
-# FASE 7: CONFIGURAÇÃO E INICIALIZAÇÃO DA STACK
+# FASE 7: CONFIGURAÇÃO DO FIREWALL
 # =============================================================================
 
-echo "🚀 Iniciando stack de aplicações instrumentadas..."
-# IMPORTANTE: Escolher UM dos cenários abaixo antes de executar
-
-# CENÁRIO 1: Via OpenTelemetry Collector (descomente as 3 linhas abaixo)
-# cd scenario-1-via-collector
-# sed -i "s/OBSERVABILITY_IP/IP_PRIVADO_INSTANCIA_1/g" docker-compose.yml
-# sudo -u ubuntu docker-compose up -d
-
-# CENÁRIO 2: Via Grafana Alloy (descomente as 3 linhas abaixo)
-# cd scenario-2-via-alloy
-# sed -i "s/OBSERVABILITY_IP/IP_PRIVADO_INSTANCIA_1/g" alloy-config.alloy
-# sudo -u ubuntu docker-compose up -d
-
-check_status "Inicialização da stack de aplicações instrumentadas"
-
-# =============================================================================
-# FASE 8: CONFIGURAÇÃO DO FIREWALL
-# =============================================================================
-
-echo "🔥 Configurando firewall..."
+echo "� Configurando firewall..."
 ufw --force enable                          # Habilita firewall (força sem prompt)
 ufw allow ssh                               # Permite SSH (porta 22)
 ufw allow 3001                              # Permite Frontend
@@ -190,7 +171,7 @@ ufw allow 8080                              # Permite Code-server
 check_status "Configuração do firewall"
 
 # =============================================================================
-# FASE 9: VERIFICAÇÃO FINAL
+# FASE 8: VERIFICAÇÃO FINAL
 # =============================================================================
 
 echo "🔍 Verificando status dos serviços..."
@@ -241,9 +222,9 @@ echo "   - Logs de instalação: sudo tail -f /var/log/user-data.log"
 # - Logs específicos: docker-compose logs [service]
 #
 # ARQUIVOS DE CONFIGURAÇÃO:
-# - Cenário 1: ~/PosTech/scenario-1-via-collector/docker-compose.yml
-# - Cenário 2: ~/PosTech/scenario-2-via-alloy/docker-compose.yml
-# - Cenário 2: ~/PosTech/scenario-2-via-alloy/alloy-config.alloy
+# - Cenário 1: ~/PosTech/cenario-1-via-collector/docker-compose.yml
+# - Cenário 2: ~/PosTech/cenario-2-via-alloy/docker-compose.yml
+# - Cenário 2: ~/PosTech/cenario-2-via-alloy/alloy-config.alloy
 # - Frontend: ~/PosTech/[cenario]/frontend/
 # - Backend: ~/PosTech/[cenario]/backend/
 #
