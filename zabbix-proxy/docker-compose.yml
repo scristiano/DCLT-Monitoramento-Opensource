@@ -1,0 +1,172 @@
+# =============================================================================
+# DOCKER COMPOSE - ZABBIX PROXY
+# =============================================================================
+# Este arquivo configura um Zabbix Proxy para distribuir a carga de 
+# monitoramento e monitorar hosts remotos
+# =============================================================================
+
+version: '3.8'
+
+services:
+  # ---------------------------------------------------------------------------
+  # SQLITE DATABASE - Banco de dados local do Zabbix Proxy
+  # ---------------------------------------------------------------------------
+  # Nota: O Zabbix Proxy pode usar SQLite (mais leve) ou MySQL/PostgreSQL
+  # Esta configuração usa SQLite para simplicidade
+  
+  # ---------------------------------------------------------------------------
+  # ZABBIX PROXY - Proxy de monitoramento
+  # ---------------------------------------------------------------------------
+  zabbix-proxy:
+    image: zabbix/zabbix-proxy-sqlite3:latest
+    container_name: zabbix-proxy
+    
+    # Configurações do proxy
+    environment:
+      # Configuração do Zabbix Server (ALTERAR PARA SEU SERVIDOR)
+      ZBX_SERVER_HOST: zabbix-server              # IP ou hostname do Zabbix Server
+      ZBX_SERVER_PORT: 10051                      # Porta do Zabbix Server
+      
+      # Identificação do proxy (deve ser único e cadastrado no Zabbix Server)
+      ZBX_HOSTNAME: zabbix-proxy-01               # Nome do proxy (cadastrar no server)
+      
+      # Configurações de performance
+      ZBX_PROXYMODE: 0                            # 0=active, 1=passive
+      ZBX_DEBUGLEVEL: 3                           # Nível de debug (0-5)
+      ZBX_TIMEOUT: 4                              # Timeout geral (segundos)
+      
+      # Configurações de cache e buffer
+      ZBX_CACHESIZE: 8M                           # Tamanho do cache de configuração
+      ZBX_HISTORYCACHESIZE: 16M                   # Cache de histórico
+      ZBX_HISTORYINDEXCACHESIZE: 4M               # Cache de índice de histórico
+      
+      # Configurações de coleta
+      ZBX_STARTPOLLERS: 5                         # Número de processos pollers
+      ZBX_STARTPOLLERSUNREACHABLE: 1              # Pollers para hosts inalcançáveis
+      ZBX_STARTTRAPPERS: 5                        # Processos para receber dados
+      ZBX_STARTPINGERS: 1                         # Processos para ICMP ping
+      ZBX_STARTDISCOVERERS: 1                     # Processos para descoberta
+      
+      # Configurações de dados
+      ZBX_HOUSEKEEPINGFREQUENCY: 1                # Frequência de limpeza (horas)
+      ZBX_CONFIGFREQUENCY: 60                     # Frequência de sincronização com server (segundos)
+      ZBX_DATASENDERFREQUENCY: 1                  # Frequência de envio de dados (segundos)
+      
+      # Configurações VMware (desabilitadas)
+      ZBX_STARTVMWARECOLLECTORS: 0                # Coletores VMware (0=desabilitado)
+      ZBX_VMWAREFREQUENCY: 60                     # Frequência de coleta VMware
+      ZBX_VMWAREPERFFREQUENCY: 60                 # Frequência de performance VMware
+      ZBX_VMWARECACHESIZE: 8M                     # Cache VMware
+      ZBX_VMWARETIMEOUT: 10                       # Timeout VMware
+    
+    # Portas expostas
+    ports:
+      - "10051:10051"                             # Porta para receber dados de agentes
+    
+    # Volume para dados do SQLite
+    volumes:
+      - zabbix-proxy-data:/var/lib/zabbix         # Dados do proxy (cache, SQLite)
+    
+    networks:
+      - zabbix-proxy-net
+    
+    restart: unless-stopped
+    
+    # Healthcheck
+    healthcheck:
+      test: ["CMD", "zabbix_proxy", "-R", "config_cache_reload"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+# -----------------------------------------------------------------------------
+# VOLUMES PERSISTENTES
+# -----------------------------------------------------------------------------
+volumes:
+  zabbix-proxy-data:
+    driver: local
+
+# -----------------------------------------------------------------------------
+# REDES
+# -----------------------------------------------------------------------------
+networks:
+  zabbix-proxy-net:
+    driver: bridge
+
+# =============================================================================
+# INSTRUÇÕES DE USO:
+# =============================================================================
+# 
+# ANTES DE INICIAR:
+# 1. Edite ZBX_SERVER_HOST com o IP/hostname do seu Zabbix Server
+# 2. Cadastre o proxy no Zabbix Server:
+#    - Configuration → Proxies → Create proxy
+#    - Proxy name: zabbix-proxy-01 (mesmo valor de ZBX_HOSTNAME)
+#    - Proxy mode: Active
+#
+# INICIAR O PROXY:
+# 1. docker-compose up -d
+#
+# VERIFICAR STATUS:
+# 1. docker-compose ps
+# 2. docker-compose logs -f zabbix-proxy
+#
+# PARAR O PROXY:
+# 1. docker-compose down
+#
+# REMOVER DADOS (CUIDADO):
+# 1. docker-compose down -v
+#
+# =============================================================================
+# CONFIGURAÇÃO NO ZABBIX SERVER:
+# =============================================================================
+#
+# 1. Acessar interface web do Zabbix Server
+# 2. Administration → Proxies → Create proxy
+# 3. Configurar:
+#    - Proxy name: zabbix-proxy-01
+#    - Proxy mode: Active
+# 4. Save
+#
+# 5. Adicionar hosts ao proxy:
+#    - Configuration → Hosts → Create host (ou editar existente)
+#    - Monitored by proxy: zabbix-proxy-01
+#
+# =============================================================================
+# VERIFICAÇÃO:
+# =============================================================================
+#
+# No Zabbix Server, verificar:
+# - Administration → Proxies
+# - Status do proxy deve aparecer como "Active"
+# - Last seen deve mostrar timestamp recente
+#
+# Logs do proxy:
+# docker-compose logs -f zabbix-proxy
+#
+# =============================================================================
+# TROUBLESHOOTING:
+# =============================================================================
+#
+# Proxy não conecta ao server:
+# - Verificar ZBX_SERVER_HOST (IP correto?)
+# - Verificar conectividade: docker-compose exec zabbix-proxy ping zabbix-server
+# - Verificar firewall/security groups (porta 10051)
+# - Verificar se proxy está cadastrado no server com nome correto
+#
+# Proxy não recebe dados dos agentes:
+# - Verificar se agentes estão configurados com IP do proxy
+# - Verificar porta 10051 acessível
+# - Verificar logs: docker-compose logs zabbix-proxy
+#
+# =============================================================================
+# ARQUITETURA:
+# =============================================================================
+#
+# Zabbix Agent → (10050) → Zabbix Proxy → (10051) → Zabbix Server
+#
+# O proxy coleta dados dos agentes e envia para o servidor central,
+# reduzindo a carga no servidor e permitindo monitoramento distribuído.
+#
+# =============================================================================
