@@ -185,8 +185,8 @@ aws ec2 run-instances \
 Após criar as duas instâncias, clone o repositório para ter acesso aos arquivos necessários:
 
 ```bash
-git clone -b aula-01 https://github.com/Ed-Carlos-Marinho/PosTech-DevOps-e-Arquitetura-Cloud---Monitoramento-OpenSource.git
-cd PosTech-DevOps-e-Arquitetura-Cloud---Monitoramento-OpenSource
+git clone -b aula-01 https://github.com/Ed-Carlos-Marinho/PosTech-DevOps-e-Arquitetura-Cloud---Monitoramento-OpenSource.git PosTech
+cd PosTech
 ```
 
 Os arquivos estarão disponíveis:
@@ -251,7 +251,7 @@ sudo mkdir -p /var/log/zabbix
 sudo mkdir -p /run/zabbix
 
 # Copiar binários
-sudo cp bin/zabbix_agentd /usr/local/sbin/
+sudo cp sbin/zabbix_agentd /usr/local/sbin/
 sudo cp bin/zabbix_get /usr/local/bin/
 sudo cp bin/zabbix_sender /usr/local/bin/
 
