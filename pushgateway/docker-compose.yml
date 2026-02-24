@@ -1,0 +1,161 @@
+# =============================================================================
+# DOCKER COMPOSE - PUSHGATEWAY + BATCH JOB SCHEDULER
+# =============================================================================
+# Este arquivo configura:
+# - Pushgateway: Recebe métricas de jobs batch
+# - Scheduler: Agendador que executa job a cada 1 minuto
+# - Batch Job: Aplicação que simula processamento e envia métricas
+# =============================================================================
+
+version: '3.8'
+
+services:
+  # ---------------------------------------------------------------------------
+  # PUSHGATEWAY - Recebe métricas de jobs batch/efêmeros
+  # ---------------------------------------------------------------------------
+  pushgateway:
+    image: prom/pushgateway:latest
+    container_name: pushgateway
+    
+    # Porta para receber métricas e expor para Prometheus
+    ports:
+      - "9091:9091"                           # Interface web e API
+    
+    # Argumentos de inicialização
+    command:
+      - '--web.listen-address=:9091'
+      - '--web.telemetry-path=/metrics'
+      - '--persistence.file=/data/pushgateway.data'
+      - '--persistence.interval=5m'
+    
+    # Volume para persistência de dados
+    volumes:
+      - pushgateway-data:/data
+    
+    networks:
+      - pushgateway-net
+    
+    restart: unless-stopped
+    
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9091/-/healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # ---------------------------------------------------------------------------
+  # SCHEDULER - Agendador de tarefas (executa batch job a cada 1 minuto)
+  # ---------------------------------------------------------------------------
+  scheduler:
+    image: alpine:latest
+    container_name: batch-scheduler
+    
+    # Comando para executar cron
+    command: >
+      sh -c "
+        echo '* * * * * docker run --rm --network pushgateway_pushgateway-net --name batch-job-run batch-job:latest' > /etc/crontabs/root &&
+        crond -f -l 2
+      "
+    
+    # Compartilhar socket do Docker para executar containers
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    
+    # Instalar docker client
+    entrypoint: >
+      sh -c "
+        apk add --no-cache docker-cli &&
+        echo '* * * * * docker run --rm --network pushgateway_pushgateway-net --name batch-job-run batch-job:latest' > /etc/crontabs/root &&
+        crond -f -l 2
+      "
+    
+    depends_on:
+      - pushgateway
+    
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # BATCH JOB - Aplicação batch que processa e envia métricas
+  # ---------------------------------------------------------------------------
+  # Nota: Este serviço não fica rodando continuamente
+  # Ele é executado pelo scheduler a cada 1 minuto
+  batch-job:
+    build:
+      context: ./batch-job
+      dockerfile: Dockerfile
+    image: batch-job:latest
+    container_name: batch-job
+    
+    environment:
+      PUSHGATEWAY_URL: pushgateway:9091
+      JOB_NAME: batch_processing_job
+    
+    networks:
+      - pushgateway-net
+    
+    # Este container não deve ficar rodando
+    # Ele será executado pelo scheduler
+    profiles:
+      - manual
+
+# -----------------------------------------------------------------------------
+# VOLUMES PERSISTENTES
+# -----------------------------------------------------------------------------
+volumes:
+  pushgateway-data:
+    driver: local
+
+# -----------------------------------------------------------------------------
+# REDES
+# -----------------------------------------------------------------------------
+networks:
+  pushgateway-net:
+    driver: bridge
+
+# =============================================================================
+# INSTRUÇÕES DE USO:
+# =============================================================================
+#
+# 1. BUILD DA APLICAÇÃO BATCH:
+#    docker-compose build batch-job
+#
+# 2. INICIAR PUSHGATEWAY E SCHEDULER:
+#    docker-compose up -d pushgateway scheduler
+#
+# 3. ACESSAR PUSHGATEWAY:
+#    http://SEU_IP:9091
+#
+# 4. VERIFICAR LOGS:
+#    docker-compose logs -f scheduler
+#    docker logs batch-job-run (quando estiver executando)
+#
+# 5. TESTAR MANUALMENTE O BATCH JOB:
+#    docker-compose run --rm batch-job
+#
+# 6. PARAR SERVIÇOS:
+#    docker-compose down
+#
+# =============================================================================
+# CONFIGURAÇÃO NO PROMETHEUS:
+# =============================================================================
+#
+# Adicionar no prometheus.yml da instância 1:
+#
+# scrape_configs:
+#   - job_name: 'pushgateway'
+#     honor_labels: true
+#     static_configs:
+#       - targets: ['IP_PUSHGATEWAY:9091']
+#
+# =============================================================================
+# MÉTRICAS DISPONÍVEIS:
+# =============================================================================
+#
+# O batch job envia as seguintes métricas:
+# - batch_job_duration_seconds: Duração da execução
+# - batch_job_records_processed: Número de registros processados
+# - batch_job_status: Status da execução (1=sucesso, 0=falha)
+# - batch_job_last_success_timestamp: Timestamp da última execução bem-sucedida
+#
+# =============================================================================
