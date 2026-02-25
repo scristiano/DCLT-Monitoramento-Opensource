@@ -179,8 +179,14 @@ aws ec2 run-instances \
 Após criar as duas instâncias, clone o repositório para ter acesso aos arquivos necessários:
 
 ```bash
+# Navegar para o diretório home do usuário ubuntu
+cd /home/ubuntu
+
+# Clonar o repositório na branch aula-02 com nome simplificado
 git clone -b aula-02 https://github.com/Ed-Carlos-Marinho/PosTech-DevOps-e-Arquitetura-Cloud---Monitoramento-OpenSource.git PosTech
-cd PosTech-DevOps-e-Arquitetura-Cloud---Monitoramento-OpenSource
+
+# Acessar o diretório do projeto
+cd PosTech
 ```
 
 Os arquivos estarão disponíveis:

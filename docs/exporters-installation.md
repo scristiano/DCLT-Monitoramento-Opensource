@@ -87,12 +87,14 @@ Esta opção usa Docker Compose para gerenciar o cAdvisor e aplicações de test
 # Conectar na instância via SSM ou SSH
 aws ssm start-session --target i-xxxxxxxxx
 
-# Clonar o repositório (ajuste a URL e branch conforme necessário)
-git clone https://github.com/seu-usuario/seu-repositorio.git
-cd seu-repositorio
+# Navegar para o diretório home do usuário ubuntu
+cd /home/ubuntu
 
-# Trocar para a branch correta (ajuste conforme necessário)
-git checkout main  # ou a branch que você está usando
+# Clonar o repositório na branch aula-02 com nome simplificado
+git clone -b aula-02 https://github.com/Ed-Carlos-Marinho/PosTech-DevOps-e-Arquitetura-Cloud---Monitoramento-OpenSource.git PosTech
+
+# Acessar o diretório do projeto
+cd PosTech
 ```
 
 #### Passo 2: Subir o cAdvisor e aplicações de teste

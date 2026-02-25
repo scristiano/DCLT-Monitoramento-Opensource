@@ -19,6 +19,146 @@ Stack completa para monitoramento de jobs batch usando Pushgateway e Prometheus.
                                                     └─────────────────┘
 ```
 
+## Setup da Instância EC2 para Pushgateway
+
+### Passo 1: Criar Security Group para Pushgateway
+
+**Via Console AWS:**
+
+1. **EC2 Dashboard** → **Security Groups** → **Create security group**
+
+2. **Configurações:**
+   - Name: `pushgateway-sg`
+   - Description: `Security group para Pushgateway`
+   - VPC: Mesma VPC das outras instâncias
+
+3. **Regras de entrada (Inbound rules):**
+   - SSH (22) - Source: Seu IP
+   - Custom TCP (8080) - Source: 0.0.0.0/0 (code-server)
+   - Custom TCP (9091) - Source: Security Group do Prometheus Server (Pushgateway)
+   - Custom TCP (9090) - Source: 0.0.0.0/0 (Prometheus web - opcional para testes)
+
+4. **Create security group**
+
+**Via AWS CLI:**
+```bash
+# Criar Security Group
+aws ec2 create-security-group \
+  --group-name pushgateway-sg \
+  --description "Security group para Pushgateway" \
+  --vpc-id vpc-xxxxxxxxx
+
+# Adicionar regras de entrada
+aws ec2 authorize-security-group-ingress \
+  --group-id sg-xxxxxxxxx \
+  --protocol tcp \
+  --port 22 \
+  --cidr SEU_IP/32
+
+aws ec2 authorize-security-group-ingress \
+  --group-id sg-xxxxxxxxx \
+  --protocol tcp \
+  --port 8080 \
+  --cidr 0.0.0.0/0
+
+aws ec2 authorize-security-group-ingress \
+  --group-id sg-xxxxxxxxx \
+  --protocol tcp \
+  --port 9091 \
+  --source-group sg-prometheus-server
+
+aws ec2 authorize-security-group-ingress \
+  --group-id sg-xxxxxxxxx \
+  --protocol tcp \
+  --port 9090 \
+  --cidr 0.0.0.0/0
+```
+
+### Passo 2: Criar Instância EC2 para Pushgateway
+
+**Via Console AWS:**
+
+1. **EC2 Dashboard** → **Launch Instance**
+
+2. **Configurações básicas:**
+   - Name: `pushgateway-server`
+   - AMI: Ubuntu Server 24.04 LTS
+   - Instance type: t4g.small (ARM64)
+   - Key pair: Selecione sua chave
+
+3. **Network settings:**
+   - VPC: Mesma VPC do Prometheus Server
+   - Subnet: Pública
+   - Auto-assign public IP: Enable
+   - Security group: `pushgateway-sg`
+
+4. **Advanced details:**
+   - IAM instance profile: `PosTech-DevOps-Monitoramento-Profile`
+   - User data: Cole o conteúdo do arquivo `scripts/ec2-userdata-pushgateway.sh`
+
+5. **Launch instance**
+
+**Via AWS CLI:**
+```bash
+aws ec2 run-instances \
+  --image-id ami-0c7217cdde317cfec \
+  --instance-type t4g.small \
+  --key-name sua-chave \
+  --security-group-ids sg-xxxxxxxxx \
+  --subnet-id subnet-xxxxxxxxx \
+  --associate-public-ip-address \
+  --iam-instance-profile Name=PosTech-DevOps-Monitoramento-Profile \
+  --user-data file://scripts/ec2-userdata-pushgateway.sh \
+  --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=pushgateway-server}]'
+```
+
+### Passo 3: Verificar Instância Pushgateway
+
+**Aguardar inicialização (5-10 minutos)**
+
+**Conectar na instância:**
+```bash
+# Via SSH
+ssh -i sua-chave.pem ubuntu@IP_PUSHGATEWAY
+
+# OU via SSM (recomendado)
+aws ssm start-session --target i-xxxxxxxxx
+```
+
+**Verificar serviços:**
+```bash
+# Verificar user data
+sudo tail -f /var/log/user-data.log
+
+# Verificar code-server
+sudo systemctl status code-server
+
+# Verificar Docker
+docker --version
+docker-compose --version
+```
+
+**Acessar interfaces:**
+- **Code-server**: `http://IP_PUSHGATEWAY:8080` (senha: demo123)
+- **Pushgateway**: Após executar `docker-compose up -d` → `http://IP_PUSHGATEWAY:9091`
+- **Prometheus**: `http://IP_PUSHGATEWAY:9090` (opcional para testes locais)
+
+### Passo 4: Clonar repositório e iniciar serviços
+
+```bash
+# Navegar para o diretório home do usuário ubuntu
+cd /home/ubuntu
+
+# Clonar o repositório na branch aula-02 com nome simplificado
+git clone -b aula-02 https://github.com/Ed-Carlos-Marinho/PosTech-DevOps-e-Arquitetura-Cloud---Monitoramento-OpenSource.git PosTech
+
+# Acessar o diretório do pushgateway
+cd PosTech/pushgateway
+
+# Iniciar serviços
+docker-compose up -d
+```
+
 ## Componentes
 
 ### 1. Pushgateway
