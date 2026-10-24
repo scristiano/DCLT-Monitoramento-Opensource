@@ -129,19 +129,28 @@ services:
     restart: unless-stopped
     
     # Configurações específicas do MySQL para Zabbix
-    command: --character-set-server=utf8 --collation-server=utf8_bin --default-authentication-plugin=mysql_native_password
-    
+    # - utf8mb4/utf8mb4_bin: charset exigido pelo Zabbix 6.0+
+    # - log-bin-trust-function-creators: permite que o Zabbix crie triggers/funções
+    #   ao importar o schema (sem isso a criação do banco falha com binlog ativo)
+    command: >
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_bin
+      --default-authentication-plugin=mysql_native_password
+      --log-bin-trust-function-creators=1
+
     # Healthcheck para garantir que o MySQL está pronto antes de outros serviços
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p$MYSQL_ROOT_PASSWORD"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p$$MYSQL_ROOT_PASSWORD"]
+      interval: 10s                             # Intervalo entre testes
       timeout: 20s                              # Timeout para cada teste
       retries: 10                               # Número de tentativas
+      start_period: 30s                         # Tempo de inicialização do MySQL
 
   # ---------------------------------------------------------------------------
   # ZABBIX SERVER - Engine de monitoramento tradicional
   # ---------------------------------------------------------------------------
   zabbix-server:
-    image: zabbix/zabbix-server-mysql:latest
+    image: zabbix/zabbix-server-mysql:alpine-7.0-latest
     container_name: zabbix-server
     
     # Configurações de conexão com banco e otimizações
@@ -187,7 +196,7 @@ services:
   # ZABBIX WEB INTERFACE - Interface web do Zabbix
   # ---------------------------------------------------------------------------
   zabbix-web:
-    image: zabbix/zabbix-web-nginx-mysql:latest
+    image: zabbix/zabbix-web-nginx-mysql:alpine-7.0-latest
     container_name: zabbix-web
     
     # Configurações de conexão e localização
@@ -214,17 +223,12 @@ services:
       zabbix-db:
         condition: service_healthy
     restart: unless-stopped
-    
-    # Delay de 20 segundos para garantir que o Zabbix Server esteja completamente inicializado
-    command: >
-      sh -c "sleep 20 && 
-             /usr/bin/docker-entrypoint.sh"
 
   # ---------------------------------------------------------------------------
   # ZABBIX AGENT - Agente local para monitoramento do próprio servidor
   # ---------------------------------------------------------------------------
   zabbix-agent:
-    image: zabbix/zabbix-agent:latest
+    image: zabbix/zabbix-agent:alpine-7.0-latest
     container_name: zabbix-agent
     
     # Configurações do agente
