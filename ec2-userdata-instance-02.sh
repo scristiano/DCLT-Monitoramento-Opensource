@@ -227,6 +227,9 @@ ExecStop=/bin/kill -SIGTERM $MAINPID
 RestartSec=10s
 User=zabbix
 Group=zabbix
+# /run é tmpfs: recria /run/zabbix (dono zabbix) a cada start, inclusive após reboot
+RuntimeDirectory=zabbix
+RuntimeDirectoryMode=0755
 
 [Install]
 WantedBy=multi-user.target
