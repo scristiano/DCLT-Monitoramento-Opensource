@@ -175,6 +175,30 @@ services:
       - nginx
       - test-app
 
+  # ---------------------------------------------------------------------------
+  # JAEGER AGENT - Coleta traces localmente e envia para collector
+  # ---------------------------------------------------------------------------
+  jaeger-agent:
+    image: jaegertracing/jaeger-agent:latest
+    container_name: jaeger-agent
+
+    # Portas para recebimento de traces
+    ports:
+      - "6831:6831/udp"   # Jaeger thrift compact
+      - "6832:6832/udp"   # Jaeger thrift binary
+      - "5778:5778"       # HTTP endpoint para configuração
+      - "14271:14271"     # Admin port
+
+    # Configuração do agente - IP da instância 1 (Jaeger Collector)
+    # IMPORTANTE: Substituir pelo IP privado real da instância de observabilidade
+    environment:
+      - REPORTER_GRPC_HOST_PORT=172.31.29.237:14250
+      - LOG_LEVEL=debug
+
+    networks:
+      - app-network
+    restart: unless-stopped
+
 # -----------------------------------------------------------------------------
 # VOLUMES PERSISTENTES - Para manter logs entre reinicializações
 # -----------------------------------------------------------------------------
