@@ -125,6 +125,32 @@ services:
     depends_on:
       - loki
 
+  # ---------------------------------------------------------------------------
+  # JAEGER ALL-IN-ONE - Tracing distribuído completo (desenvolvimento)
+  # ---------------------------------------------------------------------------
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    container_name: jaeger
+
+    # Portas do Jaeger All-in-One
+    ports:
+      - "16686:16686"     # Interface web do Jaeger UI
+      - "14268:14268"     # HTTP endpoint para spans
+      - "14250:14250"     # gRPC endpoint para spans
+      - "9411:9411"       # Zipkin compatible endpoint
+      - "6831:6831/udp"   # UDP endpoint para spans (Jaeger Agent)
+      - "6832:6832/udp"   # UDP endpoint para spans (Jaeger Agent)
+      - "5778:5778"       # HTTP endpoint para configuração
+
+    # Variáveis de ambiente para configuração
+    environment:
+      - COLLECTOR_ZIPKIN_HOST_PORT=:9411
+      - COLLECTOR_OTLP_ENABLED=true
+
+    networks:
+      - monitoring
+    restart: unless-stopped
+
 # -----------------------------------------------------------------------------
 # VOLUMES PERSISTENTES - Para manter dados entre reinicializações
 # -----------------------------------------------------------------------------
@@ -152,10 +178,12 @@ networks:
 #    - Grafana: http://IP_SERVIDOR:3000 (admin/admin123)
 #    - Prometheus: http://IP_SERVIDOR:9090
 #    - Loki: http://IP_SERVIDOR:3100 (API - não tem interface web)
+#    - Jaeger UI: http://IP_SERVIDOR:16686
 #
 # 3. Configurar Data Sources no Grafana:
 #    - Prometheus: http://prometheus:9090
 #    - Loki: http://loki:3100
+#    - Jaeger: http://jaeger:16686
 #
 # 4. Para ver logs:
 #    docker-compose logs -f [nome_do_serviço]
