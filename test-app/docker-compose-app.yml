@@ -26,7 +26,10 @@ services:
     environment:
       - FLASK_ENV=production
       - LOG_LEVEL=INFO
-    
+      - OTEL_SERVICE_NAME=test-app            # Nome do serviço exibido no Jaeger
+      - JAEGER_AGENT_HOST=jaeger-agent        # Agent que recebe os spans via UDP
+      - JAEGER_AGENT_PORT=6831
+
     # Volumes para logs persistentes
     volumes:
       - app-logs:/app/logs                    # Logs da aplicação
@@ -34,7 +37,11 @@ services:
     networks:
       - app-network
     restart: unless-stopped
-    
+
+    # Agent do Jaeger precisa estar no ar para receber os spans
+    depends_on:
+      - jaeger-agent
+
     # Healthcheck para verificar se aplicação está saudável
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5000/health"]

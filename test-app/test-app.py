@@ -14,6 +14,14 @@ from datetime import datetime
 from flask import Flask, request, jsonify
 import os
 
+# OpenTelemetry - tracing distribuído enviado ao Jaeger Agent
+from opentelemetry import trace
+from opentelemetry.sdk.resources import Resource, SERVICE_NAME
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.exporter.jaeger.thrift import JaegerExporter
+from opentelemetry.instrumentation.flask import FlaskInstrumentor
+
 # Configurar logging
 log_formatter = logging.Formatter(
     '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -35,8 +43,22 @@ logger.setLevel(logging.INFO)
 logger.addHandler(file_handler)
 logger.addHandler(console_handler)
 
+# Configurar tracing - spans enviados via UDP (thrift compact) ao Jaeger Agent
+tracer_provider = TracerProvider(
+    resource=Resource.create({SERVICE_NAME: os.getenv('OTEL_SERVICE_NAME', 'test-app')})
+)
+tracer_provider.add_span_processor(BatchSpanProcessor(JaegerExporter(
+    agent_host_name=os.getenv('JAEGER_AGENT_HOST', 'jaeger-agent'),
+    agent_port=int(os.getenv('JAEGER_AGENT_PORT', '6831')),
+)))
+trace.set_tracer_provider(tracer_provider)
+tracer = trace.get_tracer('test-app')
+
 # Criar aplicação Flask
 app = Flask(__name__)
+
+# Gera um span para cada requisição HTTP (exceto health check, chamado a cada 30s)
+FlaskInstrumentor().instrument_app(app, excluded_urls='health')
 
 # Contador global para estatísticas
 stats = {
@@ -142,25 +164,29 @@ def generate_logs(count):
         "Scheduled task executed"
     ]
     
-    for i in range(count):
-        log_type = random.choices(log_types, weights=[70, 20, 10])[0]
-        message = random.choice(messages)
-        
-        if log_type == "error":
-            logger.error(f"Generated error {i+1}/{count}: {message} failed - Connection timeout")
-            stats['errors'] += 1
-        elif log_type == "warning":
-            logger.warning(f"Generated warning {i+1}/{count}: {message} - Performance degraded")
-            stats['warnings'] += 1
-        else:
-            logger.info(f"Generated info {i+1}/{count}: {message} - Operation successful")
-        
-        stats['logs_generated'] += 1
-        
-        # Pequena pausa para não sobrecarregar
-        if i % 50 == 0:
-            time.sleep(0.1)
-    
+    # Span filho para visualizar no Jaeger o tempo gasto na geração dos logs
+    with tracer.start_as_current_span("generate-log-entries") as span:
+        span.set_attribute("logs.count", count)
+
+        for i in range(count):
+            log_type = random.choices(log_types, weights=[70, 20, 10])[0]
+            message = random.choice(messages)
+
+            if log_type == "error":
+                logger.error(f"Generated error {i+1}/{count}: {message} failed - Connection timeout")
+                stats['errors'] += 1
+            elif log_type == "warning":
+                logger.warning(f"Generated warning {i+1}/{count}: {message} - Performance degraded")
+                stats['warnings'] += 1
+            else:
+                logger.info(f"Generated info {i+1}/{count}: {message} - Operation successful")
+
+            stats['logs_generated'] += 1
+
+            # Pequena pausa para não sobrecarregar
+            if i % 50 == 0:
+                time.sleep(0.1)
+
     logger.info(f"Log generation completed: {count} entries generated")
     
     return jsonify({
